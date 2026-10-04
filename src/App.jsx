@@ -4,11 +4,10 @@ import StudentDashboard from './components/StudentDashboard';
 import CBTExamInterface from './components/CBTExamInterface';
 import ExamResultAnalytics from './components/ExamResultAnalytics';
 import AdminDashboard from './components/AdminDashboard';
-import AuthModal from './components/AuthModal';
+import CombinedAuthModal from './components/AuthModal';
 
 const API_BASE_URL = (process.env.REACT_APP_API_URL || 'https://examcbt-backend.onrender.com').replace(/\/$/, "");
 
-// Initial Default Mock Test
 const DEFAULT_INITIAL_TESTS = [
   {
     id: 'mock-cgl-default',
@@ -40,32 +39,23 @@ const DEFAULT_INITIAL_TESTS = [
 ];
 
 export default function App() {
-  // Navigation states: 'landing' | 'student_dashboard' | 'exam' | 'result' | 'admin'
   const [currentScreen, setCurrentScreen] = useState('landing');
-  
-  // Active Test and Exam Result
   const [activeTest, setActiveTest] = useState(null);
   const [examResultData, setExamResultData] = useState(null);
 
-  // Student Authentication State
+  // Auth States
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [currentStudent, setCurrentStudent] = useState(() => {
     const saved = localStorage.getItem('cbt_active_student');
     return saved ? JSON.parse(saved) : null;
   });
 
-  // Admin Modal Auth State
-  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(false);
-  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(() => {
-    return localStorage.getItem('cbt_admin_logged') === 'true';
-  });
-
-  // Tests Repository State (Laptop + Phone Cross Sync)
   const [mockTests, setMockTests] = useState(() => {
     const saved = localStorage.getItem('cbt_mock_tests');
     return saved ? JSON.parse(saved) : DEFAULT_INITIAL_TESTS;
   });
 
-  // Fetch Central Tests from Render Backend on App Load (Sync across Phone & PC)
+  // Cloud backend sync
   useEffect(() => {
     const fetchCentralCloudTests = async () => {
       try {
@@ -78,23 +68,32 @@ export default function App() {
           }
         }
       } catch (err) {
-        console.warn("Using offline/cached tests store:", err);
+        console.warn("Using offline tests fallback");
       }
     };
-
     fetchCentralCloudTests();
   }, []);
 
-  // Save tests to local cache whenever modified
-  useEffect(() => {
-    localStorage.setItem('cbt_mock_tests', JSON.stringify(mockTests));
-  }, [mockTests]);
+  const handleStudentLoginSuccess = (studentObj) => {
+    setCurrentStudent(studentObj);
+    localStorage.setItem('cbt_active_student', JSON.stringify(studentObj));
+    setIsAuthModalOpen(false);
+    setCurrentScreen('student_dashboard');
+  };
 
-  // Handle Publishing New Test (Admin to Cloud & Student Dashboard)
+  const handleAdminLoginSuccess = () => {
+    setIsAuthModalOpen(false);
+    setCurrentScreen('admin');
+  };
+
+  const handleStudentLogout = () => {
+    setCurrentStudent(null);
+    localStorage.removeItem('cbt_active_student');
+    setCurrentScreen('landing');
+  };
+
   const handlePublishNewTest = async (newTest) => {
     setMockTests((prev) => [newTest, ...prev]);
-
-    // Send to central Render backend so phone gets it immediately
     try {
       await fetch(`${API_BASE_URL}/api/tests/save`, {
         method: 'POST',
@@ -102,16 +101,12 @@ export default function App() {
         body: JSON.stringify(newTest),
       });
     } catch (e) {
-      console.warn("Could not sync to cloud immediately, saved locally:", e);
+      console.warn("Cloud sync error:", e);
     }
   };
 
-  // Handle Editing an Existing Test
   const handleUpdateExistingTest = async (updatedTest) => {
-    setMockTests((prev) =>
-      prev.map((t) => (t.id === updatedTest.id ? updatedTest : t))
-    );
-
+    setMockTests((prev) => prev.map((t) => (t.id === updatedTest.id ? updatedTest : t)));
     try {
       await fetch(`${API_BASE_URL}/api/tests/save`, {
         method: 'POST',
@@ -123,75 +118,26 @@ export default function App() {
     }
   };
 
-  // Handle Deleting a Test
   const handleDeleteTest = async (testId) => {
-    if (!window.confirm("Kya aap sach me is test ko delete karna chahte hain?")) return;
+    if (!window.confirm("Kya aap is test ko delete karna chahte hain?")) return;
     setMockTests((prev) => prev.filter((t) => t.id !== testId));
-
     try {
-      await fetch(`${API_BASE_URL}/api/tests/${testId}`, {
-        method: 'DELETE'
-      });
+      await fetch(`${API_BASE_URL}/api/tests/${testId}`, { method: 'DELETE' });
     } catch (e) {
       console.warn("Cloud delete failed:", e);
     }
   };
 
-  // Student Registration / Login
-  const handleStudentAuthSuccess = (studentData) => {
-    setCurrentStudent(studentData);
-    localStorage.setItem('cbt_active_student', JSON.stringify(studentData));
-    
-    // Save to all students list for Admin roster
-    const allStudents = JSON.parse(localStorage.getItem('cbt_students') || '[]');
-    const exists = allStudents.some(s => s.id === studentData.id);
-    if (!exists) {
-      allStudents.unshift(studentData);
-      localStorage.setItem('cbt_students', JSON.stringify(allStudents));
-    }
-  };
-
-  const handleStudentLogout = () => {
-    setCurrentStudent(null);
-    localStorage.removeItem('cbt_active_student');
-    setCurrentScreen('landing');
-  };
-
-  // Start CBT Exam
-  const handleStartExam = (test) => {
-    setActiveTest(test);
-    setCurrentScreen('exam');
-  };
-
-  // Finish Exam & Show Analytics
-  const handleExamFinish = (result) => {
-    setExamResultData(result);
-    setCurrentScreen('result');
-  };
-
-  // Admin Login Handler
-  const handleAdminLoginSubmit = (email, pass) => {
-    if (email === 'admin@examcbt.com' && pass === 'admin123') {
-      setIsAdminLoggedIn(true);
-      localStorage.setItem('cbt_admin_logged', 'true');
-      setIsAdminAuthModalOpen(false);
-      setCurrentScreen('admin');
-    } else {
-      alert("Invalid Admin Credentials! Use admin@examcbt.com / admin123");
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-slate-950 font-sans selection:bg-emerald-500 selection:text-slate-950">
+    <div className="min-h-screen bg-slate-950 font-sans">
       {/* 1. Landing Screen */}
       {currentScreen === 'landing' && (
         <LandingPage
-          onEnterDashboard={() => setCurrentScreen('student_dashboard')}
-          onOpenAdmin={() => {
-            if (isAdminLoggedIn) {
-              setCurrentScreen('admin');
+          onOpenLoginModal={() => {
+            if (currentStudent) {
+              setCurrentScreen('student_dashboard');
             } else {
-              setIsAdminAuthModalOpen(true);
+              setIsAuthModalOpen(true);
             }
           }}
         />
@@ -201,32 +147,32 @@ export default function App() {
       {currentScreen === 'student_dashboard' && (
         <StudentDashboard
           currentStudent={currentStudent}
-          onStudentLogin={handleStudentAuthSuccess}
+          onStudentLogin={handleStudentLoginSuccess}
           onLogout={handleStudentLogout}
           mockTests={mockTests}
-          onStartMock={handleStartExam}
-          onBackHome={() => setCurrentScreen('landing')}
-          onOpenAdmin={() => {
-            if (isAdminLoggedIn) {
-              setCurrentScreen('admin');
-            } else {
-              setIsAdminAuthModalOpen(true);
-            }
+          onStartMock={(test) => {
+            setActiveTest(test);
+            setCurrentScreen('exam');
           }}
+          onBackHome={() => setCurrentScreen('landing')}
+          onOpenAdmin={() => setIsAuthModalOpen(true)}
         />
       )}
 
-      {/* 3. Real TCS iON Exam Screen */}
+      {/* 3. TCS iON Exam Screen */}
       {currentScreen === 'exam' && activeTest && (
         <CBTExamInterface
           testData={activeTest}
           studentData={currentStudent}
-          onFinishExam={handleExamFinish}
+          onFinishExam={(result) => {
+            setExamResultData(result);
+            setCurrentScreen('result');
+          }}
           onExitExam={() => setCurrentScreen('student_dashboard')}
         />
       )}
 
-      {/* 4. Scorecard & Detailed Analytics */}
+      {/* 4. Scorecard Analytics */}
       {currentScreen === 'result' && examResultData && (
         <ExamResultAnalytics
           resultData={examResultData}
@@ -236,22 +182,23 @@ export default function App() {
         />
       )}
 
-      {/* 5. Admin Control Center */}
+      {/* 5. Admin Dashboard */}
       {currentScreen === 'admin' && (
         <AdminDashboard
           existingTests={mockTests}
           onPublishTest={handlePublishNewTest}
           onUpdateExistingTest={handleUpdateExistingTest}
           onDeleteTest={handleDeleteTest}
-          onBackToHome={() => setCurrentScreen('student_dashboard')}
+          onBackToHome={() => setCurrentScreen('landing')}
         />
       )}
 
-      {/* Admin Login Modal */}
-      {isAdminAuthModalOpen && (
-        <AuthModal
-          onClose={() => setIsAdminAuthModalOpen(false)}
-          onLogin={handleAdminLoginSubmit}
+      {/* Unified Single Login Modal for Candidate & Admin */}
+      {isAuthModalOpen && (
+        <CombinedAuthModal
+          onClose={() => setIsAuthModalOpen(false)}
+          onStudentLogin={handleStudentLoginSuccess}
+          onAdminLogin={handleAdminLoginSuccess}
         />
       )}
     </div>
