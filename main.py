@@ -17,20 +17,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Central In-Memory Store taaki Laptop & Mobile dono par same tests dikhein
+# Central In-Memory Store
 LIVE_TESTS_STORE = []
+REGISTERED_STUDENTS_STORE = []
 
 @app.get("/")
 def home():
     return {"status": "EXAMCBT backend is online and running successfully"}
 
+# ----------------- TEST APIS -----------------
 @app.get("/api/tests")
 def get_all_tests():
     return {"status": "success", "tests": LIVE_TESTS_STORE}
 
 @app.post("/api/tests/save")
 def save_live_test(test_data: dict):
-    # Check if exists to update, else append
     existing_idx = next((i for i, t in enumerate(LIVE_TESTS_STORE) if t.get("id") == test_data.get("id")), None)
     if existing_idx is not None:
         LIVE_TESTS_STORE[existing_idx] = test_data
@@ -44,6 +45,19 @@ def delete_live_test(test_id: str):
     LIVE_TESTS_STORE = [t for t in LIVE_TESTS_STORE if t.get("id") != test_id]
     return {"status": "success"}
 
+# ----------------- STUDENT ROSTER APIS -----------------
+@app.get("/api/students")
+def get_all_students():
+    return {"status": "success", "students": REGISTERED_STUDENTS_STORE}
+
+@app.post("/api/students/register")
+def register_student(student: dict):
+    existing = next((s for s in REGISTERED_STUDENTS_STORE if s.get("id") == student.get("id")), None)
+    if not existing:
+        REGISTERED_STUDENTS_STORE.insert(0, student)
+    return {"status": "success", "students": REGISTERED_STUDENTS_STORE}
+
+# ----------------- PDF CONVERTER -----------------
 @app.post("/api/convert-pdf-to-cbt")
 async def convert_pdf_to_cbt(file: UploadFile = File(...)):
     file_bytes = await file.read()
@@ -83,7 +97,6 @@ async def convert_pdf_to_cbt(file: UploadFile = File(...)):
         if sub_lines:
             full_question += "\n" + "\n".join(sub_lines)
 
-        # Precise Answer Key Detection (Tick Marks & Chosen Option)
         detected_correct_num = None
         for line in options_part.split('\n'):
             line_str = line.strip()
@@ -92,7 +105,6 @@ async def convert_pdf_to_cbt(file: UploadFile = File(...)):
                 detected_correct_num = int(tick_match.group(2))
                 break
 
-        # Extract Options (1 to 4)
         parsed_opts = {}
         opt_matches = re.findall(r'(?:Ans\s*)?[X✔✓√\u2713\u2714\u221a\s]*([1-4])\.\s*(.+)', options_part)
         for item in opt_matches:
@@ -111,7 +123,6 @@ async def convert_pdf_to_cbt(file: UploadFile = File(...)):
 
         correct_idx = (detected_correct_num - 1) if (detected_correct_num and 1 <= detected_correct_num <= 4) else 0
 
-        # DIAGRAM CAPTURE (Vector + Graphic Crop)
         diagram_img = None
         needs_diagram = any(w in full_question.lower() for w in ['figure', 'diagram', 'dice', 'cube', 'fold', 'pattern', 'mirror', 'embedded', 'triangles', 'squares']) or len(full_question.strip()) < 12
 
@@ -122,7 +133,6 @@ async def convert_pdf_to_cbt(file: UploadFile = File(...)):
                     rects = page_obj.search_for(f"Q.{q_num}") or page_obj.search_for(f"Q. {q_num}")
                     if rects:
                         r0 = rects[0]
-                        # Crop entire diagram rectangular region under question title
                         crop_box = fitz.Rect(
                             page_obj.rect.x0 + 35,
                             r0.y1 + 4,
