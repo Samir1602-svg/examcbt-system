@@ -2,14 +2,18 @@ import React, { useState, useEffect } from 'react';
 
 export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, onDeleteTest, onBackToHome, existingTests = [] }) {
   const [activeTab, setActiveTab] = useState('live_tests');
+  const [uploadMethod, setUploadMethod] = useState('pdf'); // 'pdf' | 'gemini_json'
+  
   const [testTitle, setTestTitle] = useState('');
   const [duration, setDuration] = useState(60);
   const [pdfFile, setPdfFile] = useState(null);
+  const [jsonInput, setJsonInput] = useState('');
+  
   const [uploading, setUploading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [registeredStudents, setRegisteredStudents] = useState([]);
 
-  // Selected Test for Editing
+  // Test Editor States
   const [selectedTestId, setSelectedTestId] = useState(null);
   const [editingTest, setEditingTest] = useState(null);
 
@@ -68,10 +72,61 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   const handleSaveTestChanges = () => {
     editingTest.isRecentlyUpdated = true;
     onUpdateExistingTest(editingTest);
-    alert(`✓ "${editingTest.title}" successfully updated and synced with Student Dashboard!`);
+    alert(`✓ "${editingTest.title}" updated successfully!`);
   };
 
-  // Direct Live Render Backend Endpoint Connection
+  // Method 1: AI / Gemini JSON Parser (100% Fail-Proof)
+  const handleGeminiJsonImport = () => {
+    if (!testTitle.trim()) {
+      alert("Kripya Test Title dalein!");
+      return;
+    }
+    if (!jsonInput.trim()) {
+      alert("Kripya Gemini ka JSON data paste karein!");
+      return;
+    }
+
+    try {
+      // Clean JSON formatting if code fences included
+      let clean = jsonInput.trim();
+      if (clean.startsWith("```json")) clean = clean.slice(7);
+      if (clean.startsWith("```")) clean = clean.slice(3);
+      if (clean.endsWith("```")) clean = clean.slice(0, -3);
+
+      const parsed = JSON.parse(clean.trim());
+      const qList = Array.isArray(parsed) ? parsed : (parsed.questions || []);
+
+      if (qList.length === 0) {
+        throw new Error("No valid questions found in JSON");
+      }
+
+      const newMock = {
+        id: `mock-${Date.now()}`,
+        title: testTitle,
+        duration_mins: parseInt(duration) || 60,
+        questions: qList.map((q, idx) => ({
+          id: idx + 1,
+          question_en: q.question || q.question_en || `Question ${idx + 1}`,
+          question_hi: q.question_hi || q.question || q.question_en,
+          image: q.image || null,
+          options_en: q.options || q.options_en || ['Option A', 'Option B', 'Option C', 'Option D'],
+          options_hi: q.options_hi || q.options || q.options_en,
+          correct_option_index: typeof q.correct_option_index === 'number' ? q.correct_option_index : 0,
+          subject: q.subject || 'SSC CGL Examination'
+        }))
+      };
+
+      onPublishTest(newMock);
+      setStatusMessage(`✓ Success! ${newMock.questions.length} Questions imported cleanly via AI.`);
+      setTestTitle('');
+      setJsonInput('');
+      setActiveTab('live_tests');
+    } catch (e) {
+      alert("Invalid JSON format! Kripya Gemini se generated valid JSON paste karein.");
+    }
+  };
+
+  // Method 2: PDF Upload via Render Backend
   const handlePdfUpload = async () => {
     if (!pdfFile || !testTitle) {
       alert("Kripya Test Title aur PDF file dono select karein!");
@@ -79,16 +134,13 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
     }
 
     setUploading(true);
-    setStatusMessage('Connecting to Render Backend & parsing questions... (Render free tier may take 30-40s to wake up)');
+    setStatusMessage('Uploading to Backend & parsing questions...');
 
     const formData = new FormData();
     formData.append('file', pdfFile);
 
-    // Direct Production Render URL with Localhost Fallback
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const API_BASE_URL = isLocalhost 
-      ? 'http://localhost:8000' 
-      : 'https://examcbt-backend.onrender.com';
+    const API_BASE_URL = isLocalhost ? 'http://localhost:8000' : '[https://examcbt-backend.onrender.com](https://examcbt-backend.onrender.com)';
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/convert-pdf-to-cbt`, {
@@ -96,21 +148,16 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
         body: formData,
       });
 
-      if (!response.ok) {
-        throw new Error(`Server responded with status ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Backend Status: ${response.status}`);
 
       const result = await response.json();
       if (result.status === 'success' && result.data) {
-        const generatedQuestions = Array.isArray(result.data) 
-          ? result.data 
-          : result.data.questions || [];
+        const generatedQuestions = Array.isArray(result.data) ? result.data : result.data.questions || [];
 
         const newMockTest = {
           id: `mock-${Date.now()}`,
           title: testTitle,
           duration_mins: parseInt(duration) || 60,
-          isRecentlyUpdated: true,
           questions: generatedQuestions.map((q, idx) => ({
             id: idx + 1,
             question_en: q.question_en,
@@ -124,15 +171,15 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
         };
 
         onPublishTest(newMockTest);
-        setStatusMessage(`✓ Success! ${newMockTest.questions.length} Questions synced live to Student Dashboard.`);
+        setStatusMessage(`✓ Success! ${newMockTest.questions.length} Questions parsed and synced!`);
         setTestTitle('');
         setPdfFile(null);
         setActiveTab('live_tests');
       } else {
-        setStatusMessage('Error: Could not extract valid questions from PDF.');
+        setStatusMessage('Error parsing questions. Try the "Gemini AI JSON" method below.');
       }
     } catch (err) {
-      setStatusMessage(`Error connecting to backend (${API_BASE_URL}). Note: If Render was in sleep mode, wait 30 seconds and try again.`);
+      setStatusMessage(`Backend connection timed out. Tip: Use "Gemini AI JSON Importer" below for 100% instant sync!`);
     } finally {
       setUploading(false);
     }
@@ -141,7 +188,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 sm:p-6 font-sans">
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Admin Header */}
+        {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-4">
           <div>
             <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20">
@@ -157,52 +204,42 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
           </button>
         </div>
 
-        {/* Top Metric Cards */}
+        {/* Metric Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-          <div 
-            onClick={() => setActiveTab('students')}
-            className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 p-4 sm:p-5 rounded-2xl cursor-pointer transition"
-          >
+          <div onClick={() => setActiveTab('students')} className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Total Registered Students</span>
             <div className="text-2xl sm:text-3xl font-black text-amber-400 mt-1">{registeredStudents.length}</div>
-            <span className="text-[10px] text-slate-500 block mt-1">Click to view roster →</span>
           </div>
-
-          <div 
-            onClick={() => setActiveTab('live_tests')}
-            className="bg-slate-900 border border-slate-800 hover:border-emerald-500/50 p-4 sm:p-5 rounded-2xl cursor-pointer transition"
-          >
+          <div onClick={() => setActiveTab('live_tests')} className="bg-slate-900 border border-slate-800 hover:border-emerald-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Total Live Tests</span>
             <div className="text-2xl sm:text-3xl font-black text-emerald-400 mt-1">{existingTests.length}</div>
-            <span className="text-[10px] text-emerald-400 font-bold block mt-1">Click to edit questions →</span>
           </div>
-
-          <div className="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl">
-            <span className="text-xs text-slate-400">AI Engine Status</span>
+          <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+            <span className="text-xs text-slate-400">AI Engine Support</span>
             <div className="text-xs sm:text-sm font-bold text-emerald-400 mt-2 flex items-center space-x-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>TCS Block Parser Live</span>
+              <span>Direct PDF + Gemini JSON Dual Mode</span>
             </div>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
+        {/* Tab Header */}
         <div className="flex space-x-2 border-b border-slate-800 pb-2 overflow-x-auto no-scrollbar">
           <button
             onClick={() => setActiveTab('live_tests')}
-            className={`px-3 sm:px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'live_tests' ? 'bg-emerald-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'live_tests' ? 'bg-emerald-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
           >
             📝 Manage Live Tests ({existingTests.length})
           </button>
           <button
             onClick={() => setActiveTab('pdf')}
-            className={`px-3 sm:px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'pdf' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'pdf' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
           >
-            📄 Upload & Sync New PDF
+            ⚡ Add / Import New Paper
           </button>
           <button
             onClick={() => setActiveTab('students')}
-            className={`px-3 sm:px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'students' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'students' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
           >
             👥 Candidate Records ({registeredStudents.length})
           </button>
@@ -240,92 +277,41 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
                 ))}
               </div>
             ) : (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 space-y-6">
-                <div className="flex flex-wrap justify-between items-center gap-4 border-b border-slate-800 pb-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-6">
+                <div className="flex justify-between items-center border-b border-slate-800 pb-4">
                   <div>
                     <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Editing Test Questions</span>
-                    <h2 className="text-lg sm:text-xl font-bold text-white">{editingTest.title}</h2>
+                    <h2 className="text-xl font-bold text-white">{editingTest.title}</h2>
                   </div>
-                  <div className="flex space-x-2 sm:space-x-3 w-full sm:w-auto">
-                    <button
-                      onClick={() => setEditingTest(null)}
-                      className="flex-1 sm:flex-none px-3 py-2 border border-slate-700 rounded-xl text-xs font-bold text-slate-300 hover:bg-slate-800"
-                    >
-                      Close Editor
-                    </button>
-                    <button
-                      onClick={handleSaveTestChanges}
-                      className="flex-1 sm:flex-none px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs shadow-lg transition"
-                    >
-                      💾 Save & Sync
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs text-slate-400 font-bold block mb-1">Test Title</label>
-                    <input
-                      type="text"
-                      value={editingTest.title}
-                      onChange={(e) => setEditingTest({ ...editingTest, title: e.target.value })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-400 font-bold block mb-1">Duration (Mins)</label>
-                    <input
-                      type="number"
-                      value={editingTest.duration_mins}
-                      onChange={(e) => setEditingTest({ ...editingTest, duration_mins: parseInt(e.target.value) || 60 })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm outline-none"
-                    />
+                  <div className="flex space-x-3">
+                    <button onClick={() => setEditingTest(null)} className="px-3 py-2 border border-slate-700 rounded-xl text-xs font-bold text-slate-300">Close</button>
+                    <button onClick={handleSaveTestChanges} className="px-4 py-2 bg-emerald-500 text-slate-950 font-black rounded-xl text-xs">💾 Save Changes</button>
                   </div>
                 </div>
 
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
-                    <h3 className="text-sm font-bold text-slate-200">
-                      Questions ({editingTest.questions?.length || 0})
-                    </h3>
-                    <button
-                      onClick={handleAddNewQuestion}
-                      className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-400 text-xs px-3 py-1.5 rounded-lg font-bold"
-                    >
-                      + Add Question
-                    </button>
+                    <h3 className="text-sm font-bold text-slate-200">Questions ({editingTest.questions?.length || 0})</h3>
+                    <button onClick={handleAddNewQuestion} className="bg-slate-800 border border-slate-700 text-emerald-400 text-xs px-3 py-1.5 rounded-lg font-bold">+ Add Question</button>
                   </div>
 
                   {editingTest.questions?.map((q, qIdx) => (
-                    <div key={qIdx} className="bg-slate-950/80 border border-slate-800 p-3 sm:p-4 rounded-2xl space-y-3">
+                    <div key={qIdx} className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-3">
                       <div className="flex justify-between items-center">
                         <span className="text-xs font-bold text-emerald-400">Q.{qIdx + 1}</span>
-                        <button
-                          onClick={() => handleDeleteQuestion(qIdx)}
-                          className="text-rose-400 hover:text-rose-300 text-xs font-bold"
-                        >
-                          Remove
-                        </button>
+                        <button onClick={() => handleDeleteQuestion(qIdx)} className="text-rose-400 text-xs font-bold">Remove</button>
                       </div>
 
                       <textarea
                         rows={2}
                         value={q.question_en}
                         onChange={(e) => handleQuestionTextChange(qIdx, 'question_en', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 outline-none focus:border-emerald-500"
-                        placeholder="Question text..."
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
                       />
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                         {(q.options_en || []).map((opt, optIdx) => (
-                          <div
-                            key={optIdx}
-                            className={`flex items-center space-x-2 p-2 rounded-xl border ${
-                              q.correct_option_index === optIdx 
-                                ? 'border-emerald-500/50 bg-emerald-500/10' 
-                                : 'border-slate-800 bg-slate-900'
-                            }`}
-                          >
+                          <div key={optIdx} className={`flex items-center space-x-2 p-2 rounded-xl border ${q.correct_option_index === optIdx ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-slate-800 bg-slate-900'}`}>
                             <input
                               type="radio"
                               name={`correct_${qIdx}`}
@@ -346,32 +332,40 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
                     </div>
                   ))}
                 </div>
-
-                <div className="flex justify-end pt-4 border-t border-slate-800">
-                  <button
-                    onClick={handleSaveTestChanges}
-                    className="w-full sm:w-auto px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs shadow-lg transition"
-                  >
-                    💾 Save All Changes & Sync
-                  </button>
-                </div>
               </div>
             )}
           </div>
         )}
 
-        {/* TAB 2: UPLOAD & SYNC NEW PDF */}
+        {/* TAB 2: UPLOAD & SYNC (DUAL MODE) */}
         {activeTab === 'pdf' && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-800">
+          <div className="space-y-5">
+            {/* Mode Switcher */}
+            <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 max-w-md mx-auto">
+              <button
+                onClick={() => setUploadMethod('gemini_json')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${uploadMethod === 'gemini_json' ? 'bg-emerald-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
+              >
+                ✨ AI / Gemini JSON (100% Instant)
+              </button>
+              <button
+                onClick={() => setUploadMethod('pdf')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${uploadMethod === 'pdf' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
+              >
+                📄 Raw PDF Upload
+              </button>
+            </div>
+
+            {/* Basic Test Details */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-900 p-4 rounded-2xl border border-slate-800">
               <div>
                 <label className="text-xs text-slate-400 font-bold block mb-1">Test Title</label>
                 <input
                   type="text"
-                  placeholder="e.g. SSC CGL 27th July 2023 Shift-3"
+                  placeholder="e.g. SSC CGL 2024 Tier-1 Official Shift 1"
                   value={testTitle}
                   onChange={(e) => setTestTitle(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-amber-400"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-emerald-400"
                 />
               </div>
               <div>
@@ -380,49 +374,78 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
                   type="number"
                   value={duration}
                   onChange={(e) => setDuration(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-amber-400"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-emerald-400"
                 />
               </div>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 p-5 sm:p-6 rounded-2xl space-y-4">
-              <div className="border-2 border-dashed border-slate-700 hover:border-amber-500/50 p-6 sm:p-8 rounded-2xl text-center cursor-pointer transition">
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  onChange={(e) => setPdfFile(e.target.files[0])}
-                  className="hidden"
-                  id="admin-pdf-upload"
-                />
-                <label htmlFor="admin-pdf-upload" className="cursor-pointer block space-y-2">
-                  <div className="text-4xl">📥</div>
-                  <div className="text-sm font-semibold text-slate-200">
-                    {pdfFile ? pdfFile.name : "Click to select Question Paper PDF"}
-                  </div>
-                  <p className="text-xs text-slate-500">Auto extracts all 100 questions, diagrams & correct answer keys</p>
-                </label>
-              </div>
-
-              {statusMessage && (
-                <div className="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs rounded-xl font-medium">
-                  {statusMessage}
+            {/* Method A: Gemini AI JSON Import (Zero Error Guarantee) */}
+            {uploadMethod === 'gemini_json' ? (
+              <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
+                <div className="bg-emerald-500/10 border border-emerald-500/30 p-3.5 rounded-xl text-xs text-emerald-300">
+                  <span className="font-bold">💡 How to use:</span> Gemini ya ChatGPT mein PDF drop karein aur bolein: 
+                  <span className="font-mono text-white block mt-1 bg-slate-950 p-2 rounded">
+                    "Extract all questions from this SSC PDF into JSON format: [&#123;question, options: [A,B,C,D], correct_option_index: 0&#125;]"
+                  </span>
+                  Gemini jo JSON de, use seedhe neeche paste karke button daba dein!
                 </div>
-              )}
 
-              <button
-                onClick={handlePdfUpload}
-                disabled={uploading}
-                className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg ${uploading ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-600 text-slate-950 transition'}`}
-              >
-                {uploading ? 'Parsing 100 Questions & Diagrams...' : 'Generate & Sync To Student Dashboard'}
-              </button>
-            </div>
+                <textarea
+                  rows={8}
+                  placeholder="Paste Gemini-generated JSON array here..."
+                  value={jsonInput}
+                  onChange={(e) => setJsonInput(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 outline-none focus:border-emerald-500"
+                />
+
+                <button
+                  onClick={handleGeminiJsonImport}
+                  className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition"
+                >
+                  🚀 Instant Sync Questions to Student Dashboard
+                </button>
+              </div>
+            ) : (
+              /* Method B: Raw PDF Upload */
+              <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
+                <div className="border-2 border-dashed border-slate-700 p-6 rounded-2xl text-center cursor-pointer">
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    onChange={(e) => setPdfFile(e.target.files[0])}
+                    className="hidden"
+                    id="admin-pdf-upload"
+                  />
+                  <label htmlFor="admin-pdf-upload" className="cursor-pointer block space-y-2">
+                    <div className="text-4xl">📥</div>
+                    <div className="text-sm font-semibold text-slate-200">
+                      {pdfFile ? pdfFile.name : "Click to select Question Paper PDF"}
+                    </div>
+                    <p className="text-xs text-slate-500">Auto extracts questions & diagrams via PyMuPDF</p>
+                  </label>
+                </div>
+
+                {statusMessage && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs rounded-xl font-medium">
+                    {statusMessage}
+                  </div>
+                )}
+
+                <button
+                  onClick={handlePdfUpload}
+                  disabled={uploading}
+                  className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg ${uploading ? 'bg-slate-700 text-slate-400' : 'bg-amber-500 hover:bg-amber-600 text-slate-950'}`}
+                >
+                  {uploading ? 'Processing PDF on Render Backend...' : 'Generate & Sync To Student Dashboard'}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
         {/* TAB 3: CANDIDATE RECORDS */}
         {activeTab === 'students' && (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
             <div className="p-4 border-b border-slate-800 flex justify-between items-center">
               <h3 className="font-bold text-sm text-slate-200">Registered Students Roster</h3>
               <span className="text-xs text-slate-400">Total: {registeredStudents.length}</span>
