@@ -1,217 +1,131 @@
 import React, { useState } from 'react';
 
-export default function AuthModal({ onLoginSuccess, onAdminLoginSuccess, onClose }) {
-  const [mode, setMode] = useState('student_login'); // 'student_login' | 'student_register' | 'admin_login'
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [studentIdInput, setStudentIdInput] = useState('');
-  const [name, setName] = useState('');
-  const [error, setError] = useState('');
+export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
+  const [roleTab, setRoleTab] = useState('candidate'); // 'candidate' | 'admin'
+  const [candidateName, setCandidateName] = useState('');
+  const [candidateEmail, setCandidateEmail] = useState('');
+  
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
-  // Handle Student Registration
-  const handleStudentRegister = (e) => {
+  const handleCandidateSubmit = (e) => {
     e.preventDefault();
-    if (!name || !email || !password) {
-      setError('Sabhi fields bharna anivarya hai.');
+    if (!candidateName.trim()) {
+      setErrorMsg("Kripya apna poora naam enter karein!");
       return;
     }
-
-    const storedUsers = JSON.parse(localStorage.getItem('cbt_students') || '[]');
-    const existing = storedUsers.find((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (existing) {
-      setError('Yeh Email pehle se registered hai! Login karein.');
-      return;
-    }
-
-    // Generate Unique Gen-Z Roll/Student ID (e.g. CBT-2026-8491)
-    const uniqueId = `CBT-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
-    const newUser = {
-      id: uniqueId,
-      name,
-      email,
-      password,
-      createdAt: new Date().toLocaleDateString('en-GB'),
-      testsAttempted: 0
+    const student = {
+      id: `CBT-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      name: candidateName.trim(),
+      email: candidateEmail.trim() || `${candidateName.toLowerCase().replace(/\s+/g, '')}@aspirant.portal`,
+      createdAt: new Date().toLocaleDateString('en-IN')
     };
-
-    const updated = [newUser, ...storedUsers];
-    localStorage.setItem('cbt_students', JSON.stringify(updated));
-    localStorage.setItem('cbt_logged_user', JSON.stringify(newUser));
-    onLoginSuccess(newUser);
+    onStudentLogin(student);
   };
 
-  // Handle Student Login (via Email or Unique Student ID)
-  const handleStudentLogin = (e) => {
+  const handleAdminSubmit = (e) => {
     e.preventDefault();
-    const storedUsers = JSON.parse(localStorage.getItem('cbt_students') || '[]');
-    const user = storedUsers.find(
-      (u) =>
-        (u.email.toLowerCase() === email.toLowerCase() || u.id.toLowerCase() === studentIdInput.toLowerCase()) &&
-        u.password === password
-    );
-
-    if (!user) {
-      setError('Galat Credentials ya Roll ID. Kripya check karein.');
-      return;
-    }
-
-    localStorage.setItem('cbt_logged_user', JSON.stringify(user));
-    onLoginSuccess(user);
-  };
-
-  // Handle Admin Login
-  const handleAdminAuth = (e) => {
-    e.preventDefault();
-    if (email === 'admin@examcbt.com' && password === 'admin123') {
-      onAdminLoginSuccess();
+    if (adminEmail === 'admin@examcbt.com' && adminPassword === 'admin123') {
+      onAdminLogin();
     } else {
-      setError('Galat Admin Email ya Password (Use: admin@examcbt.com / admin123)');
+      setErrorMsg("Galat Credentials! Admin ke liye use karein: admin@examcbt.com / admin123");
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-slate-900/95 border border-emerald-500/30 w-full max-w-md rounded-3xl p-7 shadow-2xl relative text-white">
-        {/* Close Button */}
-        <button onClick={onClose} className="absolute top-5 right-5 text-slate-400 hover:text-white text-lg">✕</button>
-
-        {/* Header Tabs */}
-        <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 font-black text-xl flex items-center justify-center mx-auto mb-3 shadow-lg">
-            CBT
-          </div>
-          <h2 className="text-2xl font-black tracking-tight">
-            {mode === 'admin_login' ? 'Official Admin Portal' : mode === 'student_register' ? 'Student Registration' : 'Student Examination Portal'}
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            {mode === 'admin_login' ? 'Central Question & Candidate Management' : 'Access your mocks & AI weakness tracker'}
-          </p>
-        </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl relative">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-slate-400 hover:text-white text-xl font-bold w-8 h-8 rounded-full flex items-center justify-center hover:bg-slate-800 transition"
+        >
+          ✕
+        </button>
 
         {/* Tab Switcher */}
-        <div className="flex bg-slate-950 p-1 rounded-xl mb-5 border border-slate-800 text-xs font-bold">
+        <div className="flex bg-slate-950 p-1 rounded-2xl border border-slate-800 mb-6">
           <button
-            onClick={() => { setMode('student_login'); setError(''); }}
-            className={`flex-1 py-2 rounded-lg transition ${mode === 'student_login' ? 'bg-emerald-500 text-slate-950 shadow' : 'text-slate-400 hover:text-white'}`}
+            onClick={() => { setRoleTab('candidate'); setErrorMsg(''); }}
+            className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${roleTab === 'candidate' ? 'bg-emerald-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
           >
-            Student Login
+            🎓 Candidate Access
           </button>
           <button
-            onClick={() => { setMode('student_register'); setError(''); }}
-            className={`flex-1 py-2 rounded-lg transition ${mode === 'student_register' ? 'bg-emerald-500 text-slate-950 shadow' : 'text-slate-400 hover:text-white'}`}
+            onClick={() => { setRoleTab('admin'); setErrorMsg(''); }}
+            className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${roleTab === 'admin' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
           >
-            New Student
-          </button>
-          <button
-            onClick={() => { setMode('admin_login'); setError(''); }}
-            className={`flex-1 py-2 rounded-lg transition ${mode === 'admin_login' ? 'bg-amber-500 text-slate-950 shadow' : 'text-slate-400 hover:text-white'}`}
-          >
-            Admin Key
+            🛡️ Admin / Faculty
           </button>
         </div>
 
-        {error && (
-          <div className="mb-4 text-xs bg-rose-500/20 border border-rose-500/40 text-rose-300 p-2.5 rounded-xl">
-            {error}
+        {errorMsg && (
+          <div className="mb-4 p-3 bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs rounded-xl">
+            {errorMsg}
           </div>
         )}
 
-        {/* Student Register Form */}
-        {mode === 'student_register' && (
-          <form onSubmit={handleStudentRegister} className="space-y-3.5 text-xs">
+        {/* Candidate Login Form */}
+        {roleTab === 'candidate' ? (
+          <form onSubmit={handleCandidateSubmit} className="space-y-4">
             <div>
-              <label className="text-slate-300 font-semibold block mb-1">Full Name</label>
+              <label className="text-xs font-bold text-slate-300 block mb-1">Candidate Full Name *</label>
               <input
                 type="text"
-                placeholder="Samir Kumar"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-emerald-400"
+                required
+                placeholder="e.g. Rahul Sharma"
+                value={candidateName}
+                onChange={(e) => setCandidateName(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white outline-none focus:border-emerald-500"
               />
             </div>
             <div>
-              <label className="text-slate-300 font-semibold block mb-1">Email ID</label>
-              <input
-                type="email"
-                placeholder="samir@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-emerald-400"
-              />
-            </div>
-            <div>
-              <label className="text-slate-300 font-semibold block mb-1">Create Password</label>
-              <input
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-emerald-400"
-              />
-            </div>
-            <button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-3 rounded-xl text-sm shadow-lg mt-2 transition">
-              Create Account & Get Roll ID
-            </button>
-          </form>
-        )}
-
-        {/* Student Login Form */}
-        {mode === 'student_login' && (
-          <form onSubmit={handleStudentLogin} className="space-y-3.5 text-xs">
-            <div>
-              <label className="text-slate-300 font-semibold block mb-1">Email ID or Unique Roll ID</label>
+              <label className="text-xs font-bold text-slate-300 block mb-1">Email / Registration Roll (Optional)</label>
               <input
                 type="text"
-                placeholder="CBT-2026-XXXX or name@email.com"
-                value={studentIdInput || email}
-                onChange={(e) => {
-                  setStudentIdInput(e.target.value);
-                  setEmail(e.target.value);
-                }}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-emerald-400"
+                placeholder="e.g. candidate@gmail.com"
+                value={candidateEmail}
+                onChange={(e) => setCandidateEmail(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white outline-none focus:border-emerald-500"
               />
             </div>
-            <div>
-              <label className="text-slate-300 font-semibold block mb-1">Password</label>
-              <input
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-emerald-400"
-              />
-            </div>
-            <button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold py-3 rounded-xl text-sm shadow-lg mt-2 transition">
-              Verify & Enter Portal
+            <button
+              type="submit"
+              className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-xl text-sm shadow-lg shadow-emerald-500/10 active:scale-95 transition"
+            >
+              Generate Roll & Enter Exam Room →
             </button>
           </form>
-        )}
-
-        {/* Admin Login Form */}
-        {mode === 'admin_login' && (
-          <form onSubmit={handleAdminAuth} className="space-y-3.5 text-xs">
+        ) : (
+          /* Admin Login Form */
+          <form onSubmit={handleAdminSubmit} className="space-y-4">
             <div>
-              <label className="text-slate-300 font-semibold block mb-1">Admin Email</label>
+              <label className="text-xs font-bold text-slate-300 block mb-1">Admin Email</label>
               <input
                 type="email"
+                required
                 placeholder="admin@examcbt.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-amber-400"
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white outline-none focus:border-amber-500"
               />
             </div>
             <div>
-              <label className="text-slate-300 font-semibold block mb-1">Admin Password</label>
+              <label className="text-xs font-bold text-slate-300 block mb-1">Admin Password</label>
               <input
                 type="password"
-                placeholder="admin123"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-amber-400"
+                required
+                placeholder="••••••••"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white outline-none focus:border-amber-500"
               />
             </div>
-            <button type="submit" className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-3 rounded-xl text-sm shadow-lg mt-2 transition">
-              Access Admin Panel
+            <button
+              type="submit"
+              className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-xl text-sm shadow-lg shadow-amber-500/10 active:scale-95 transition"
+            >
+              Verify & Open Control Center →
             </button>
           </form>
         )}
