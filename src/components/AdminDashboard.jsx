@@ -3,8 +3,8 @@ import React, { useState, useEffect } from 'react';
 const API_BASE_URL = (process.env.REACT_APP_API_URL || 'https://examcbt-backend.onrender.com').replace(/\/$/, "");
 
 export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, onDeleteTest, onBackToHome, existingTests = [] }) {
-  const [activeTab, setActiveTab] = useState('live_tests');
-  const [uploadMethod, setUploadMethod] = useState('pdf');
+  const [activeTab, setActiveTab] = useState('pdf');
+  const [uploadMethod, setUploadMethod] = useState('gemini_json');
   
   const [testTitle, setTestTitle] = useState('');
   const [duration, setDuration] = useState(60);
@@ -14,10 +14,31 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   const [uploading, setUploading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [registeredStudents, setRegisteredStudents] = useState([]);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   // Selected Test for Editing
   const [selectedTestId, setSelectedTestId] = useState(null);
   const [editingTest, setEditingTest] = useState(null);
+
+  // Exact prompt for Gemini / ChatGPT with PDF
+  const geminiPromptText = `Please analyze this attached SSC/TCS official question paper PDF and extract all questions into the exact JSON format below. Do not write any explanations, markdown notes or text outside the JSON array:
+
+[
+  {
+    "question": "Exact question text in English or Hindi",
+    "options": ["Option 1 text", "Option 2 text", "Option 3 text", "Option 4 text"],
+    "correct_option_index": 0,
+    "subject": "General Studies"
+  }
+]
+
+Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 3, or 3 for Option 4 based on the green tick or chosen/correct answer indicated in the answer key.`;
+
+  const handleCopyPrompt = () => {
+    navigator.clipboard.writeText(geminiPromptText);
+    setCopiedPrompt(true);
+    setTimeout(() => setCopiedPrompt(false), 3000);
+  };
 
   // Fetch Central Students from Render Cloud + LocalStorage
   const fetchStudents = async () => {
@@ -209,6 +230,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 sm:p-6 font-sans">
       <div className="max-w-6xl mx-auto space-y-6">
+        {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-4">
           <div>
             <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20">
@@ -359,7 +381,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
           </div>
         )}
 
-        {/* TAB 2: UPLOAD & SYNC */}
+        {/* TAB 2: UPLOAD & SYNC (WITH PROMPT INSTRUCTION BOX) */}
         {activeTab === 'pdf' && (
           <div className="space-y-5">
             <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 max-w-md mx-auto">
@@ -401,17 +423,44 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
 
             {uploadMethod === 'gemini_json' ? (
               <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
+                
+                {/* INSTRUCTION & COPY PROMPT BOX */}
+                <div className="bg-emerald-950/40 border border-emerald-500/30 p-4 rounded-2xl space-y-3">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                      <span>💡</span> PDF Extract Prompt (Copy & Paste in Gemini with PDF):
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyPrompt}
+                      className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs px-3 py-1.5 rounded-lg shadow transition active:scale-95 shrink-0"
+                    >
+                      {copiedPrompt ? "✓ Copied to Clipboard!" : "📋 Copy Prompt"}
+                    </button>
+                  </div>
+
+                  <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl font-mono text-[11px] text-slate-300 whitespace-pre-wrap select-all max-h-36 overflow-y-auto">
+                    {geminiPromptText}
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    1. Upar <strong>Copy Prompt</strong> dabayein.<br />
+                    2. Gemini ya ChatGPT me apni PDF drop karke yeh prompt paste karein.<br />
+                    3. AI jo JSON generate kare, use neeche wale box me paste karke <strong>Instant Sync</strong> daba dein!
+                  </p>
+                </div>
+
                 <textarea
                   rows={8}
                   placeholder="Paste Gemini-generated JSON array here..."
                   value={jsonInput}
                   onChange={(e) => setJsonInput(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-mono text-slate-200 outline-none focus:border-emerald-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-xs font-mono text-slate-200 outline-none focus:border-emerald-500"
                 />
 
                 <button
                   onClick={handleGeminiJsonImport}
-                  className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition"
+                  className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition active:scale-95"
                 >
                   🚀 Instant Sync Questions to Student Dashboard
                 </button>
@@ -453,7 +502,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
           </div>
         )}
 
-        {/* TAB 3: CANDIDATE RECORDS (WITH AUTO-REFRESH) */}
+        {/* TAB 3: CANDIDATE RECORDS */}
         {activeTab === 'students' && (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
             <div className="p-4 border-b border-slate-800 flex justify-between items-center">
