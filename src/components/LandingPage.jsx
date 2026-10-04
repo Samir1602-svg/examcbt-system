@@ -1,6 +1,48 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 export default function LandingPage({ onOpenLoginModal }) {
+  const [liveNews, setLiveNews] = useState([
+    { tag: "GOVT EXAM", text: "SSC CGL & CHSL official answer sheets and simulation portal operational." },
+    { tag: "POLICY", text: "National Examination Agency updates CBT security lockdown protocol." },
+    { tag: "MARKET", text: "Indian Indices: Nifty & Sensex trade on strong institutional inflows." },
+    { tag: "RECRUITMENT", text: "Railway Recruitment Boards release multi-zone assessment calendar." },
+    { tag: "ECONOMY", text: "Reserve Bank of India maintains steady monetary and liquidity stance." }
+  ]);
+
+  // Hourly Live Feed Fetcher (Govt Exams, Policies, Stock Market)
+  useEffect(() => {
+    const fetchLiveIndianUpdates = async () => {
+      try {
+        const query = encodeURIComponent('SSC CGL exam OR Indian govt policy OR Nifty Sensex stock market');
+        const rssFeed = `https://news.google.com/rss/search?q=${query}&hl=en-IN&gl=IN&ceid=IN:en`;
+        const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssFeed)}`);
+        const data = await res.json();
+
+        if (data.status === 'ok' && data.items && data.items.length > 0) {
+          const formatted = data.items.slice(0, 8).map((item) => {
+            const title = item.title.replace(/ - .*$/, "");
+            let tag = "POLICY";
+            const lower = title.toLowerCase();
+            if (lower.includes("exam") || lower.includes("ssc") || lower.includes("rrb") || lower.includes("nta") || lower.includes("admit")) {
+              tag = "GOVT EXAM";
+            } else if (lower.includes("nifty") || lower.includes("sensex") || lower.includes("market") || lower.includes("shares") || lower.includes("stock")) {
+              tag = "MARKET";
+            }
+            return { tag, text: title };
+          });
+          setLiveNews(formatted);
+        }
+      } catch (err) {
+        console.warn("Real-time feed fallback active:", err);
+      }
+    };
+
+    fetchLiveIndianUpdates();
+    // Har 1 ghante (3600000 ms) me live update fetch karega
+    const interval = setInterval(fetchLiveIndianUpdates, 3600000);
+    return () => clearInterval(interval);
+  }, []);
+
   const govtPortals = [
     { name: "Staff Selection Commission (SSC)", url: "https://ssc.gov.in", desc: "Official Combined Graduate & Higher Secondary Recruitment" },
     { name: "Railway Recruitment Boards (RRB)", url: "https://indianrailways.gov.in", desc: "NTPC, Group D, ALP & Technical Cadres" },
@@ -19,31 +61,28 @@ export default function LandingPage({ onOpenLoginModal }) {
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col justify-between selection:bg-emerald-500 selection:text-slate-950 font-sans">
       
-      {/* 1. Sleek Modern Govt Bulletin Ticker */}
-      <div className="bg-slate-900/90 border-b border-slate-800 backdrop-blur-md h-9 overflow-hidden flex items-center relative text-xs">
+      {/* 1. Real-Time Hourly Indian Ticker */}
+      <div className="bg-slate-900 border-b border-slate-800/80 h-9 overflow-hidden flex items-center relative text-xs z-30">
         <div className="bg-gradient-to-r from-emerald-600 to-teal-500 text-slate-950 font-black px-3.5 h-full flex items-center gap-1.5 z-20 shrink-0 shadow-md">
           <span className="w-2 h-2 rounded-full bg-slate-950 animate-ping"></span>
-          <span className="tracking-wider text-[11px] uppercase">LATEST BULLETIN</span>
+          <span className="tracking-wider text-[10px] sm:text-[11px] uppercase font-mono">LIVE BULLETIN</span>
         </div>
         
-        {/* Continuous Infinite Marquee */}
         <div className="ticker-wrap flex-1 overflow-hidden whitespace-nowrap">
-          <div className="ticker-move inline-flex items-center space-x-12 text-slate-300 font-medium text-[11px] sm:text-xs">
-            <span className="flex items-center gap-2">
-              <span className="text-emerald-400 font-bold">● SSC CGL:</span> Official 2023 & 2024 Tier-1 Response Sheet CBT Engine Active.
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="text-teal-400 font-bold">● TCS iON:</span> Exact Negative Marking (-0.50) & Section Switch Timer Lockdown Enabled.
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="text-amber-400 font-bold">● FAST UPLOAD:</span> Direct PDF Parser & Gemini JSON Instant Importer Live.
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="text-emerald-400 font-bold">● SSC CGL:</span> Official 2023 & 2024 Tier-1 Response Sheet CBT Engine Active.
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="text-teal-400 font-bold">● TCS iON:</span> Exact Negative Marking (-0.50) & Section Switch Timer Lockdown Enabled.
-            </span>
+          <div className="ticker-move inline-flex items-center space-x-10 text-slate-300 font-medium text-[11px] sm:text-xs">
+            {liveNews.concat(liveNews).map((item, idx) => (
+              <span key={idx} className="inline-flex items-center space-x-2">
+                <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider ${
+                  item.tag === 'GOVT EXAM' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                  item.tag === 'MARKET' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                  'bg-teal-500/20 text-teal-400 border border-teal-500/30'
+                }`}>
+                  {item.tag}
+                </span>
+                <span className="text-slate-200">{item.text}</span>
+                <span className="text-slate-600 select-none">•</span>
+              </span>
+            ))}
           </div>
         </div>
       </div>
@@ -171,14 +210,14 @@ export default function LandingPage({ onOpenLoginModal }) {
         EXAMCBT &copy; 2026 • Real Computer Based Examination Simulation System • SSC & TCS iON Format Certified
       </footer>
 
-      {/* Modern High-Performance Continuous Animation */}
+      {/* Ticker Animation */}
       <style>{`
         .ticker-wrap {
-          mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+          mask-image: linear-gradient(to right, transparent, black 4%, black 96%, transparent);
         }
         .ticker-move {
           display: inline-flex;
-          animation: tickerLoop 30s linear infinite;
+          animation: tickerLoop 35s linear infinite;
         }
         .ticker-move:hover {
           animation-play-state: paused;
