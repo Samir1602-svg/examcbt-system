@@ -9,13 +9,8 @@ export default function StudentDashboard({
   onBackHome,
   onOpenAdmin
 }) {
-  const [activeTab, setActiveTab] = useState('available_tests'); // 'available_tests' | 'past_results'
+  const [activeTab, setActiveTab] = useState('available_tests');
   const [pastResults, setPastResults] = useState([]);
-  
-  // Persistent photo
-  const [studentPhoto, setStudentPhoto] = useState(() => {
-    return localStorage.getItem('cbt_student_photo') || null;
-  });
 
   const candidate = currentStudent || {
     id: "CBT-2026-894102",
@@ -23,9 +18,16 @@ export default function StudentDashboard({
     email: "aspirant.official@assessment.gov.in"
   };
 
-  // Load Past Exam History for this specific student roll
+  // Roll-specific photo management
+  const [studentPhoto, setStudentPhoto] = useState(null);
+
   useEffect(() => {
     if (candidate.id) {
+      // 1. Fetch photo specific to this Roll ID only
+      const savedPhoto = localStorage.getItem(`cbt_photo_${candidate.id}`);
+      setStudentPhoto(savedPhoto || null);
+
+      // 2. Fetch past exam history specific to this Roll ID
       const history = JSON.parse(localStorage.getItem(`cbt_results_${candidate.id}`) || '[]');
       setPastResults(history);
     }
@@ -33,12 +35,13 @@ export default function StudentDashboard({
 
   const handlePhotoUpload = (e) => {
     const file = e.target.files[0];
-    if (file) {
+    if (file && candidate.id) {
       const reader = new FileReader();
       reader.onloadend = () => {
         const photoData = reader.result;
         setStudentPhoto(photoData);
-        localStorage.setItem('cbt_student_photo', photoData);
+        // Save strictly against this candidate's Roll ID
+        localStorage.setItem(`cbt_photo_${candidate.id}`, photoData);
       };
       reader.readAsDataURL(file);
     }
