@@ -43,7 +43,6 @@ export default function App() {
   const [activeTest, setActiveTest] = useState(null);
   const [examResultData, setExamResultData] = useState(null);
 
-  // Auth States
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [currentStudent, setCurrentStudent] = useState(() => {
     const saved = localStorage.getItem('cbt_active_student');
@@ -128,6 +127,34 @@ export default function App() {
     }
   };
 
+  // Exam Finish & Persistent Result Save
+  const handleExamFinish = (result) => {
+    setExamResultData(result);
+
+    // Save result against this candidate's Roll ID
+    if (currentStudent?.id) {
+      const studentHistoryKey = `cbt_results_${currentStudent.id}`;
+      const pastResults = JSON.parse(localStorage.getItem(studentHistoryKey) || '[]');
+      
+      const recordItem = {
+        id: `res-${Date.now()}`,
+        testTitle: result.testTitle,
+        finalScore: result.finalScore,
+        totalQuestions: result.totalQuestions,
+        correct: result.correct,
+        wrong: result.wrong,
+        unattempted: result.unattempted,
+        timeSpentMins: result.timeSpentMins,
+        date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+      };
+
+      pastResults.unshift(recordItem);
+      localStorage.setItem(studentHistoryKey, JSON.stringify(pastResults));
+    }
+
+    setCurrentScreen('result');
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 font-sans">
       {/* 1. Landing Screen */}
@@ -164,10 +191,7 @@ export default function App() {
         <CBTExamInterface
           testData={activeTest}
           studentData={currentStudent}
-          onFinishExam={(result) => {
-            setExamResultData(result);
-            setCurrentScreen('result');
-          }}
+          onFinishExam={handleExamFinish}
           onExitExam={() => setCurrentScreen('student_dashboard')}
         />
       )}
@@ -193,7 +217,7 @@ export default function App() {
         />
       )}
 
-      {/* Unified Single Login Modal for Candidate & Admin */}
+      {/* Unified Login Modal */}
       {isAuthModalOpen && (
         <CombinedAuthModal
           onClose={() => setIsAuthModalOpen(false)}
