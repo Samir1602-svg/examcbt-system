@@ -9,19 +9,27 @@ export default function StudentDashboard({
   onBackHome,
   onOpenAdmin
 }) {
-  const [activeTab, setActiveTab] = useState('available_tests');
+  const [activeTab, setActiveTab] = useState('available_tests'); // 'available_tests' | 'past_results'
+  const [pastResults, setPastResults] = useState([]);
   
-  // Persistent photo from localStorage or student data
+  // Persistent photo
   const [studentPhoto, setStudentPhoto] = useState(() => {
     return localStorage.getItem('cbt_student_photo') || null;
   });
 
-  // Candidate Details
   const candidate = currentStudent || {
     id: "CBT-2026-894102",
     name: "Verified Aspirant",
     email: "aspirant.official@assessment.gov.in"
   };
+
+  // Load Past Exam History for this specific student roll
+  useEffect(() => {
+    if (candidate.id) {
+      const history = JSON.parse(localStorage.getItem(`cbt_results_${candidate.id}`) || '[]');
+      setPastResults(history);
+    }
+  }, [candidate.id]);
 
   const handlePhotoUpload = (e) => {
     const file = e.target.files[0];
@@ -30,7 +38,6 @@ export default function StudentDashboard({
       reader.onloadend = () => {
         const photoData = reader.result;
         setStudentPhoto(photoData);
-        // Save photo for exam room persistent header
         localStorage.setItem('cbt_student_photo', photoData);
       };
       reader.readAsDataURL(file);
@@ -116,51 +123,98 @@ export default function StudentDashboard({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex space-x-4 border-b border-slate-800 pb-2">
+        <div className="flex space-x-6 border-b border-slate-800 pb-2">
           <button
             onClick={() => setActiveTab('available_tests')}
             className={`text-xs font-bold pb-2 border-b-2 transition ${activeTab === 'available_tests' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}
           >
             Available Examination Series ({mockTests.length})
           </button>
+          <button
+            onClick={() => setActiveTab('past_results')}
+            className={`text-xs font-bold pb-2 border-b-2 transition ${activeTab === 'past_results' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}
+          >
+            My Past Exam Results ({pastResults.length})
+          </button>
         </div>
 
-        {/* Mock Tests List */}
-        {mockTests.length === 0 ? (
-          <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-12 text-center text-slate-500 text-xs">
-            Koi active test available nahi hai. Admin portal se naya test generate ya import karein.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {mockTests.map((t) => (
-              <div 
-                key={t.id} 
-                className="bg-slate-900 border border-slate-800 p-5 rounded-3xl flex flex-col justify-between hover:border-slate-700 transition space-y-4"
-              >
-                <div>
-                  <span className="text-[10px] font-mono font-bold text-teal-400 bg-teal-500/10 border border-teal-500/30 px-2 py-0.5 rounded">
-                    Official Tier-1 Simulation
-                  </span>
-                  <h3 className="font-bold text-base sm:text-lg text-white mt-2 mb-1">{t.title}</h3>
-                  <div className="flex flex-wrap gap-3 text-xs text-slate-400 mt-3">
-                    <span>📝 {t.questions?.length || 0} Questions</span>
-                    <span>⏱️️ {t.duration_mins} Minutes</span>
-                    <span>⚡ Real Marking (+2.0 / -0.5)</span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => onStartMock(t)}
-                  className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-2xl text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-emerald-500/10 active:scale-95 transition"
-                >
-                  Attempt Official Examination →
-                </button>
+        {/* TAB 1: Available Tests */}
+        {activeTab === 'available_tests' && (
+          <div>
+            {mockTests.length === 0 ? (
+              <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-12 text-center text-slate-500 text-xs">
+                Koi active test available nahi hai. Admin portal se naya test generate karein.
               </div>
-            ))}
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {mockTests.map((t) => (
+                  <div 
+                    key={t.id} 
+                    className="bg-slate-900 border border-slate-800 p-5 rounded-3xl flex flex-col justify-between hover:border-slate-700 transition space-y-4"
+                  >
+                    <div>
+                      <span className="text-[10px] font-mono font-bold text-teal-400 bg-teal-500/10 border border-teal-500/30 px-2 py-0.5 rounded">
+                        Official Tier-1 Simulation
+                      </span>
+                      <h3 className="font-bold text-base sm:text-lg text-white mt-2 mb-1">{t.title}</h3>
+                      <div className="flex flex-wrap gap-3 text-xs text-slate-400 mt-3">
+                        <span>📝 {t.questions?.length || 0} Questions</span>
+                        <span>⏱ {t.duration_mins} Minutes</span>
+                        <span>⚡ Real Marking (+2.0 / -0.5)</span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => onStartMock(t)}
+                      className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-2xl text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-emerald-500/10 active:scale-95 transition"
+                    >
+                      Attempt Official Examination →
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 2: Past Exam Results */}
+        {activeTab === 'past_results' && (
+          <div>
+            {pastResults.length === 0 ? (
+              <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-12 text-center text-slate-500 text-xs space-y-2">
+                <span className="text-2xl block">📊</span>
+                <p>Abhi tak aapne koi exam attempt nahi kiya hai.</p>
+                <p className="text-[11px] text-slate-600">Koi test submit karne par aapka score, accuracy aur date yahan permanently record ho jayenge.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pastResults.map((rec) => (
+                  <div key={rec.id} className="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:border-slate-700 transition">
+                    <div>
+                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                        {rec.date}
+                      </span>
+                      <h3 className="font-bold text-sm sm:text-base text-white mt-1">{rec.testTitle}</h3>
+                      <div className="text-xs text-slate-400 space-x-3 mt-1">
+                        <span>Correct: <strong className="text-emerald-400">{rec.correct}</strong></span>
+                        <span>Wrong: <strong className="text-rose-400">{rec.wrong}</strong></span>
+                        <span>Skipped: <strong className="text-slate-300">{rec.unattempted}</strong></span>
+                        <span>Time: {rec.timeSpentMins}m</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-950 border border-slate-800 px-4 py-2.5 rounded-xl text-right self-stretch sm:self-auto">
+                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Final Score</span>
+                      <span className="text-lg sm:text-xl font-black text-emerald-400">{rec.finalScore}</span>
+                      <span className="text-[10px] text-slate-500 ml-1">/ {rec.totalQuestions * 2}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
     </div>
   );
 }
-
