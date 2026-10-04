@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 
+const API_BASE_URL = (process.env.REACT_APP_API_URL || 'https://examcbt-backend.onrender.com').replace(/\/$/, "");
+
 export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, onDeleteTest, onBackToHome, existingTests = [] }) {
   const [activeTab, setActiveTab] = useState('live_tests');
-  const [uploadMethod, setUploadMethod] = useState('pdf'); // 'pdf' | 'gemini_json'
+  const [uploadMethod, setUploadMethod] = useState('pdf');
   
   const [testTitle, setTestTitle] = useState('');
   const [duration, setDuration] = useState(60);
@@ -13,13 +15,38 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   const [statusMessage, setStatusMessage] = useState('');
   const [registeredStudents, setRegisteredStudents] = useState([]);
 
-  // Test Editor States
+  // Selected Test for Editing
   const [selectedTestId, setSelectedTestId] = useState(null);
   const [editingTest, setEditingTest] = useState(null);
 
+  // Fetch Central Students from Render Cloud + LocalStorage
+  const fetchStudents = async () => {
+    let combined = [];
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/students`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'success' && Array.isArray(data.students)) {
+          combined = data.students;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not fetch remote students:", e);
+    }
+
+    // Merge with LocalStorage
+    const local = JSON.parse(localStorage.getItem('cbt_students') || '[]');
+    local.forEach(locS => {
+      if (!combined.some(c => c.id === locS.id)) {
+        combined.push(locS);
+      }
+    });
+
+    setRegisteredStudents(combined);
+  };
+
   useEffect(() => {
-    const students = JSON.parse(localStorage.getItem('cbt_students') || '[]');
-    setRegisteredStudents(students);
+    fetchStudents();
   }, []);
 
   const handleSelectTestToEdit = (test) => {
@@ -75,7 +102,6 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
     alert(`✓ "${editingTest.title}" updated successfully!`);
   };
 
-  // Method 1: AI / Gemini JSON Parser (100% Fail-Proof)
   const handleGeminiJsonImport = () => {
     if (!testTitle.trim()) {
       alert("Kripya Test Title dalein!");
@@ -87,7 +113,6 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
     }
 
     try {
-      // Clean JSON formatting if code fences included
       let clean = jsonInput.trim();
       if (clean.startsWith("```json")) clean = clean.slice(7);
       if (clean.startsWith("```")) clean = clean.slice(3);
@@ -97,7 +122,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
       const qList = Array.isArray(parsed) ? parsed : (parsed.questions || []);
 
       if (qList.length === 0) {
-        throw new Error("No valid questions found in JSON");
+        throw new Error("No valid questions found");
       }
 
       const newMock = {
@@ -126,7 +151,6 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
     }
   };
 
-  // Method 2: PDF Upload via Render Backend
   const handlePdfUpload = async () => {
     if (!pdfFile || !testTitle) {
       alert("Kripya Test Title aur PDF file dono select karein!");
@@ -138,9 +162,6 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
 
     const formData = new FormData();
     formData.append('file', pdfFile);
-
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const API_BASE_URL = isLocalhost ? 'http://localhost:8000' : '[https://examcbt-backend.onrender.com](https://examcbt-backend.onrender.com)';
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/convert-pdf-to-cbt`, {
@@ -176,10 +197,10 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
         setPdfFile(null);
         setActiveTab('live_tests');
       } else {
-        setStatusMessage('Error parsing questions. Try the "Gemini AI JSON" method below.');
+        setStatusMessage('Error parsing questions. Try the "Gemini AI JSON" method.');
       }
     } catch (err) {
-      setStatusMessage(`Backend connection timed out. Tip: Use "Gemini AI JSON Importer" below for 100% instant sync!`);
+      setStatusMessage(`Backend connection timed out. Tip: Use "Gemini AI JSON Importer" above for 100% instant sync!`);
     } finally {
       setUploading(false);
     }
@@ -188,7 +209,6 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 sm:p-6 font-sans">
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-4">
           <div>
             <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20">
@@ -209,10 +229,12 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
           <div onClick={() => setActiveTab('students')} className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Total Registered Students</span>
             <div className="text-2xl sm:text-3xl font-black text-amber-400 mt-1">{registeredStudents.length}</div>
+            <span className="text-[10px] text-slate-500 block mt-1">Click to view roster →</span>
           </div>
           <div onClick={() => setActiveTab('live_tests')} className="bg-slate-900 border border-slate-800 hover:border-emerald-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Total Live Tests</span>
             <div className="text-2xl sm:text-3xl font-black text-emerald-400 mt-1">{existingTests.length}</div>
+            <span className="text-[10px] text-emerald-400 font-bold block mt-1">Click to edit questions →</span>
           </div>
           <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
             <span className="text-xs text-slate-400">AI Engine Support</span>
@@ -238,7 +260,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
             ⚡ Add / Import New Paper
           </button>
           <button
-            onClick={() => setActiveTab('students')}
+            onClick={() => { setActiveTab('students'); fetchStudents(); }}
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'students' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
           >
             👥 Candidate Records ({registeredStudents.length})
@@ -337,10 +359,9 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
           </div>
         )}
 
-        {/* TAB 2: UPLOAD & SYNC (DUAL MODE) */}
+        {/* TAB 2: UPLOAD & SYNC */}
         {activeTab === 'pdf' && (
           <div className="space-y-5">
-            {/* Mode Switcher */}
             <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 max-w-md mx-auto">
               <button
                 onClick={() => setUploadMethod('gemini_json')}
@@ -356,7 +377,6 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
               </button>
             </div>
 
-            {/* Basic Test Details */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-900 p-4 rounded-2xl border border-slate-800">
               <div>
                 <label className="text-xs text-slate-400 font-bold block mb-1">Test Title</label>
@@ -379,17 +399,8 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
               </div>
             </div>
 
-            {/* Method A: Gemini AI JSON Import (Zero Error Guarantee) */}
             {uploadMethod === 'gemini_json' ? (
               <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
-                <div className="bg-emerald-500/10 border border-emerald-500/30 p-3.5 rounded-xl text-xs text-emerald-300">
-                  <span className="font-bold">💡 How to use:</span> Gemini ya ChatGPT mein PDF drop karein aur bolein: 
-                  <span className="font-mono text-white block mt-1 bg-slate-950 p-2 rounded">
-                    "Extract all questions from this SSC PDF into JSON format: [&#123;question, options: [A,B,C,D], correct_option_index: 0&#125;]"
-                  </span>
-                  Gemini jo JSON de, use seedhe neeche paste karke button daba dein!
-                </div>
-
                 <textarea
                   rows={8}
                   placeholder="Paste Gemini-generated JSON array here..."
@@ -406,7 +417,6 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
                 </button>
               </div>
             ) : (
-              /* Method B: Raw PDF Upload */
               <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
                 <div className="border-2 border-dashed border-slate-700 p-6 rounded-2xl text-center cursor-pointer">
                   <input
@@ -443,12 +453,20 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
           </div>
         )}
 
-        {/* TAB 3: CANDIDATE RECORDS */}
+        {/* TAB 3: CANDIDATE RECORDS (WITH AUTO-REFRESH) */}
         {activeTab === 'students' && (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
             <div className="p-4 border-b border-slate-800 flex justify-between items-center">
               <h3 className="font-bold text-sm text-slate-200">Registered Students Roster</h3>
-              <span className="text-xs text-slate-400">Total: {registeredStudents.length}</span>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={fetchStudents}
+                  className="text-xs bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold px-3 py-1.5 rounded-lg border border-slate-700 transition"
+                >
+                  ↻ Refresh Roster
+                </button>
+                <span className="text-xs text-slate-400">Total: {registeredStudents.length}</span>
+              </div>
             </div>
             {registeredStudents.length === 0 ? (
               <div className="p-8 text-center text-slate-500 text-xs">Abhi tak koi naya student register nahi hua hai.</div>
@@ -464,7 +482,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
                       <th className="p-3">Status</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800">
+                  <tbody className="divide-y border-slate-800">
                     {registeredStudents.map((st) => (
                       <tr key={st.id} className="hover:bg-slate-800/40">
                         <td className="p-3 font-mono text-emerald-400 font-bold">{st.id}</td>
