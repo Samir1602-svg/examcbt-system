@@ -3,14 +3,15 @@ import React, { useState, useEffect } from 'react';
 export default function CBTExamInterface({ testData, studentData, onFinishExam, onExitExam }) {
   const questions = testData?.questions || [];
   const [currentIdx, setCurrentIdx] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState({}); // { [qIdx]: selectedOptionIdx }
+  const [selectedAnswers, setSelectedAnswers] = useState({});
   const [markedForReview, setMarkedForReview] = useState({});
-  const [language, setLanguage] = useState('English'); // 'English' | 'Hindi'
+  const [language, setLanguage] = useState('English');
   const [timeLeft, setTimeLeft] = useState((testData?.duration_mins || 60) * 60);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
 
-  // Candidate photo state (Persistent from localStorage or props)
-  const candidatePhoto = studentData?.photo || localStorage.getItem('cbt_student_photo');
+  // Strictly fetch photo for this candidate's Roll ID only
+  const candidateRoll = studentData?.id || 'CBT-2026-0000';
+  const candidatePhoto = studentData?.photo || localStorage.getItem(`cbt_photo_${candidateRoll}`);
 
   // Countdown Timer
   useEffect(() => {
@@ -63,19 +64,17 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
     });
   };
 
-  // Status Check for Palette Colors
   const getQuestionStatus = (idx) => {
     const isAnswered = selectedAnswers[idx] !== undefined;
     const isMarked = markedForReview[idx] === true;
 
-    if (isAnswered && isMarked) return 'marked-answered'; // Purple with Green Dot
-    if (isMarked) return 'marked'; // Purple
-    if (isAnswered) return 'answered'; // Green
+    if (isAnswered && isMarked) return 'marked-answered';
+    if (isMarked) return 'marked';
+    if (isAnswered) return 'answered';
     if (idx === currentIdx) return 'current';
-    return 'not-answered'; // Silver / Gray
+    return 'not-answered';
   };
 
-  // Final Submission Score Calculation
   const handleFinalSubmission = () => {
     let score = 0;
     let correctCount = 0;
@@ -88,10 +87,10 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
         unattemptedCount++;
       } else if (userAns === q.correct_option_index) {
         correctCount++;
-        score += 2.0; // Standard SSC Tier-1 (+2)
+        score += 2.0;
       } else {
         wrongCount++;
-        score -= 0.50; // Standard SSC Tier-1 (-0.50)
+        score -= 0.50;
       }
     });
 
@@ -110,7 +109,6 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
     onFinishExam(resultData);
   };
 
-  // Summary counts for submit modal
   const answeredCount = Object.keys(selectedAnswers).length;
   const markedCount = Object.keys(markedForReview).length;
   const notVisitedCount = Math.max(0, questions.length - answeredCount);
@@ -118,7 +116,7 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col font-sans select-none">
       
-      {/* 1. TCS iON Standard Exam Header */}
+      {/* 1. Header */}
       <header className="bg-[#245d8b] text-white px-3 sm:px-6 py-2.5 flex justify-between items-center shadow-md">
         <div className="flex items-center space-x-2">
           <span className="font-bold text-sm sm:text-base tracking-wide truncate max-w-[180px] sm:max-w-md">
@@ -127,13 +125,11 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
         </div>
 
         <div className="flex items-center space-x-3 sm:space-x-6">
-          {/* Real Examination Clock */}
           <div className="bg-red-600 px-3 py-1 rounded text-center">
             <span className="text-[10px] uppercase font-bold block leading-none text-red-200">Time Left</span>
             <span className="font-mono text-sm sm:text-lg font-bold leading-tight">{formatTimer(timeLeft)}</span>
           </div>
 
-          {/* Bilingual Switcher */}
           <div className="flex items-center space-x-1.5 text-xs">
             <span className="hidden sm:inline text-slate-200 font-semibold">View in:</span>
             <select
@@ -151,11 +147,9 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
       {/* 2. Main Question & Palette Area */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         
-        {/* Left: Question Presentation Box */}
+        {/* Left: Question Box */}
         <div className="flex-1 flex flex-col justify-between bg-white border-r border-slate-300 overflow-y-auto p-4 sm:p-6">
           <div className="space-y-4">
-            
-            {/* Question Details Strip */}
             <div className="flex justify-between items-center border-b border-slate-200 pb-2 text-xs">
               <span className="font-black text-slate-700 text-sm">
                 Question No. {currentIdx + 1} of {questions.length}
@@ -165,12 +159,10 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
               </span>
             </div>
 
-            {/* Question Text */}
             <div className="text-sm sm:text-base font-medium text-slate-900 leading-relaxed whitespace-pre-line">
               {language === 'Hindi' ? (currentQ.question_hi || currentQ.question_en) : currentQ.question_en}
             </div>
 
-            {/* Diagram / Image Render Area */}
             {currentQ.image && (
               <div className="my-3 border border-slate-300 rounded p-2 bg-slate-50 max-w-xl">
                 <img
@@ -181,7 +173,6 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
               </div>
             )}
 
-            {/* Options List */}
             <div className="space-y-2.5 pt-3">
               {(language === 'Hindi' ? (currentQ.options_hi || currentQ.options_en) : currentQ.options_en)?.map((opt, optIdx) => {
                 const isSelected = selectedAnswers[currentIdx] === optIdx;
@@ -190,9 +181,7 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
                     key={optIdx}
                     onClick={() => handleSelectOption(optIdx)}
                     className={`flex items-center space-x-3 p-3 rounded-lg border-2 cursor-pointer transition ${
-                      isSelected
-                        ? 'border-[#245d8b] bg-sky-50 font-semibold'
-                        : 'border-slate-200 hover:bg-slate-50'
+                      isSelected ? 'border-[#245d8b] bg-sky-50 font-semibold' : 'border-slate-200 hover:bg-slate-50'
                     }`}
                   >
                     <input
@@ -209,7 +198,6 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
             </div>
           </div>
 
-          {/* Bottom Action Strip */}
           <div className="mt-8 pt-4 border-t border-slate-200 flex flex-wrap gap-2 justify-between items-center bg-slate-50 p-2 rounded-lg">
             <div className="flex gap-2">
               <button
@@ -237,9 +225,9 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
 
         {/* Right: Candidate Info & Question Palette */}
         <div className="w-full lg:w-80 bg-slate-50 border-t lg:border-t-0 border-slate-300 flex flex-col justify-between p-4">
-          
           <div className="space-y-4">
-            {/* Candidate Identity with Live Uploaded Photo */}
+            
+            {/* Candidate Identity with Specific Photo */}
             <div className="bg-white border border-slate-200 rounded-lg p-3 flex items-center space-x-3 shadow-sm">
               <div className="w-14 h-16 bg-slate-200 border border-slate-300 rounded overflow-hidden flex items-center justify-center shrink-0">
                 {candidatePhoto ? (
@@ -253,7 +241,7 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
                   {studentData?.name || 'Verified Candidate'}
                 </span>
                 <span className="text-[10px] font-mono text-slate-500 block truncate">
-                  Roll: {studentData?.id || 'CBT-2026-0000'}
+                  Roll: {candidateRoll}
                 </span>
                 <span className="text-[9px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 inline-block mt-0.5">
                   Biometric Verified
@@ -281,13 +269,13 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
               </div>
             </div>
 
-            {/* Palette Grid */}
+            {/* Question Palette */}
             <div>
               <span className="text-xs font-bold text-slate-700 block mb-2">Question Palette:</span>
               <div className="grid grid-cols-5 gap-1.5 max-h-56 lg:max-h-80 overflow-y-auto p-1 bg-white border border-slate-200 rounded">
                 {questions.map((_, idx) => {
                   const status = getQuestionStatus(idx);
-                  let colorClass = 'bg-slate-100 text-slate-700 border-slate-300'; // Not visited
+                  let colorClass = 'bg-slate-100 text-slate-700 border-slate-300';
 
                   if (status === 'answered') {
                     colorClass = 'bg-[#28a745] text-white font-bold border-[#1e7e34]';
@@ -311,7 +299,6 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
             </div>
           </div>
 
-          {/* 100% Reliable Submit Button (Always Clickable) */}
           <div className="pt-4 mt-2 border-t border-slate-200">
             <button
               onClick={() => setShowSubmitModal(true)}
@@ -323,7 +310,7 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
         </div>
       </div>
 
-      {/* Confirmation Modal Before Submission */}
+      {/* Submit Modal */}
       {showSubmitModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl text-center space-y-4">
@@ -347,10 +334,6 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
                 <span className="text-slate-500 text-[10px]">Remaining</span>
               </div>
             </div>
-
-            <p className="text-[11px] text-slate-500">
-              Exam submit hote hi aapka final score aur section-wise weak topic analysis turant generate ho jayega.
-            </p>
 
             <div className="flex space-x-2 pt-2">
               <button
