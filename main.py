@@ -1,5 +1,7 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional, Any
 import fitz  # PyMuPDF
 import base64
 import json
@@ -7,7 +9,6 @@ import re
 
 app = FastAPI(title="EXAMCBT AI Engine")
 
-# Production CORS: Localhost aur public domain dono allow karta hai
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,9 +17,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Central In-Memory Store taaki Laptop & Mobile dono par same tests dikhein
+LIVE_TESTS_STORE = []
+
 @app.get("/")
 def home():
     return {"status": "EXAMCBT backend is online and running successfully"}
+
+@app.get("/api/tests")
+def get_all_tests():
+    return {"status": "success", "tests": LIVE_TESTS_STORE}
+
+@app.post("/api/tests/save")
+def save_live_test(test_data: dict):
+    # Check if exists to update, else append
+    existing_idx = next((i for i, t in enumerate(LIVE_TESTS_STORE) if t.get("id") == test_data.get("id")), None)
+    if existing_idx is not None:
+        LIVE_TESTS_STORE[existing_idx] = test_data
+    else:
+        LIVE_TESTS_STORE.insert(0, test_data)
+    return {"status": "success", "message": "Test synced centrally across all devices"}
+
+@app.delete("/api/tests/{test_id}")
+def delete_live_test(test_id: str):
+    global LIVE_TESTS_STORE
+    LIVE_TESTS_STORE = [t for t in LIVE_TESTS_STORE if t.get("id") != test_id]
+    return {"status": "success"}
 
 @app.post("/api/convert-pdf-to-cbt")
 async def convert_pdf_to_cbt(file: UploadFile = File(...)):
@@ -26,19 +50,13 @@ async def convert_pdf_to_cbt(file: UploadFile = File(...)):
     doc = fitz.open(stream=file_bytes, filetype="pdf")
 
     full_text = ""
-    # Har page ka text aur blocks store karein
-    page_data = []
+    pages_dict = []
 
     for page_idx, page in enumerate(doc):
-        text = page.get_text()
-        full_text += text + "\n"
-        page_data.append({
-            "page_num": page_idx + 1,
-            "page_obj": page,
-            "text": text
-        })
+        t = page.get_text()
+        full_text += t + "\n"
+        pages_dict.append({"page_num": page_idx, "page_obj": page, "text": t})
 
-    # TCS iON Question pattern (Q.1, Q.2 ... Q.100)
     q_chunks = re.split(r'\n(?=Q\.\s*\d+)', full_text)
     questions = []
 
@@ -54,7 +72,6 @@ async def convert_pdf_to_cbt(file: UploadFile = File(...)):
         question_part = parts[0]
         options_part = parts[1] if len(parts) > 1 else ""
 
-        # Multi-line statement extraction
         q_lines = question_part.split('\n')
         q_header = re.sub(r'^Q\.\s*\d+\s*', '', q_lines[0]).strip()
         sub_lines = [
@@ -94,41 +111,29 @@ async def convert_pdf_to_cbt(file: UploadFile = File(...)):
 
         correct_idx = (detected_correct_num - 1) if (detected_correct_num and 1 <= detected_correct_num <= 4) else 0
 
-        # High-Accuracy Diagram Crop Rendering:
-        # Check if question relies on figures
-        has_diagram = any(w in full_question.lower() for w in ['figure', 'diagram', 'dice', 'fold', 'cube', 'pattern', 'mirror', 'embedded']) or len(full_question.strip()) < 15
-
+        # DIAGRAM CAPTURE (Vector + Graphic Crop)
         diagram_img = None
-        if has_diagram:
-            # Locate which page contains this Q.X
-            target_page = None
-            for p in page_data:
-                if f"Q.{q_num}" in p["text"] or f"Q. {q_num}" in p["text"]:
-                    target_page = p["page_obj"]
-                    break
+        needs_diagram = any(w in full_question.lower() for w in ['figure', 'diagram', 'dice', 'cube', 'fold', 'pattern', 'mirror', 'embedded', 'triangles', 'squares']) or len(full_question.strip()) < 12
 
-            if target_page:
-                try:
-                    # Find rect coordinate of Q.X on the page
-                    search_res = target_page.search_for(f"Q.{q_num}") or target_page.search_for(f"Q. {q_num}")
-                    if search_res:
-                        q_rect = search_res[0]
-                        # Crop area below the question heading (standard diagram zone in TCS sheets)
-                        # rect: [x0, y0, x1, y1]
-                        crop_rect = fitz.Rect(
-                            target_page.rect.x0 + 40,
-                            q_rect.y1 + 5,
-                            target_page.rect.x1 - 40,
-                            min(target_page.rect.y1 - 80, q_rect.y1 + 220)
+        if needs_diagram:
+            for p in pages_dict:
+                if f"Q.{q_num}" in p["text"] or f"Q. {q_num}" in p["text"]:
+                    page_obj = p["page_obj"]
+                    rects = page_obj.search_for(f"Q.{q_num}") or page_obj.search_for(f"Q. {q_num}")
+                    if rects:
+                        r0 = rects[0]
+                        # Crop entire diagram rectangular region under question title
+                        crop_box = fitz.Rect(
+                            page_obj.rect.x0 + 35,
+                            r0.y1 + 4,
+                            page_obj.rect.x1 - 35,
+                            min(page_obj.rect.y1 - 60, r0.y1 + 240)
                         )
-                        # Render cropped area to crisp image (zoom 1.5x)
-                        mat = fitz.Matrix(1.5, 1.5)
-                        pix = target_page.get_pixmap(matrix=mat, clip=crop_rect)
-                        img_bytes = pix.tobytes("png")
-                        if len(img_bytes) > 2000:
-                            diagram_img = f"data:image/png;base64,{base64.b64encode(img_bytes).decode('utf-8')}"
-                except Exception as e:
-                    print(f"Crop diagram error for Q.{q_num}:", e)
+                        pix = page_obj.get_pixmap(matrix=fitz.Matrix(1.6, 1.6), clip=crop_box)
+                        img_data = pix.tobytes("png")
+                        if len(img_data) > 1500:
+                            diagram_img = f"data:image/png;base64,{base64.b64encode(img_data).decode('utf-8')}"
+                    break
 
         if not full_question.strip():
             full_question = "Select the correct option figure that satisfies the given pattern/conditions."
