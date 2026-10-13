@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function LandingPage({ onOpenLoginModal }) {
+export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
   const [liveNews, setLiveNews] = useState([
     { tag: "GOVT EXAM", text: "SSC CGL & CHSL official answer sheets and simulation portal operational." },
     { tag: "POLICY", text: "National Examination Agency updates CBT security lockdown protocol." },
@@ -9,13 +9,22 @@ export default function LandingPage({ onOpenLoginModal }) {
     { tag: "ECONOMY", text: "Reserve Bank of India maintains steady monetary and liquidity stance." }
   ]);
 
-  // Hourly Live Feed Fetcher (Govt Exams, Policies, Stock Market)
+  // Point 10: Dynamic Showcase Exams managed via Director Console
+  const [examCategories, setExamCategories] = useState(() => {
+    return JSON.parse(localStorage.getItem('cbt_showcase_exams') || JSON.stringify([
+      { code: "SSC-CGL", name: "Combined Graduate Level", pattern: "Tier-1 (100 Qs / 60 Min)", status: "Active Mock Matrix" },
+      { code: "SSC-CHSL", name: "Combined Higher Secondary", pattern: "Tier-1 (100 Qs / 60 Min)", status: "Simulation Ready" },
+      { code: "RRB-NTPC", name: "Non-Technical Popular", pattern: "CBT-1 (100 Qs / 90 Min)", status: "TCS Engine Active" },
+      { code: "SSC-CPO", name: "Central Police Organization", pattern: "Paper-1 (200 Qs / 120 Min)", status: "Certified Setup" }
+    ]));
+  });
+
   useEffect(() => {
     const fetchLiveIndianUpdates = async () => {
       try {
         const query = encodeURIComponent('SSC CGL exam OR Indian govt policy OR Nifty Sensex stock market');
-        const rssFeed = `https://news.google.com/rss/search?q=${query}&hl=en-IN&gl=IN&ceid=IN:en`;
-        const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssFeed)}`);
+        const rssFeed = `[https://news.google.com/rss/search?q=$](https://news.google.com/rss/search?q=$){query}&hl=en-IN&gl=IN&ceid=IN:en`;
+        const res = await fetch(`[https://api.rss2json.com/v1/api.json?rss_url=$](https://api.rss2json.com/v1/api.json?rss_url=$){encodeURIComponent(rssFeed)}`);
         const data = await res.json();
 
         if (data.status === 'ok' && data.items && data.items.length > 0) {
@@ -38,24 +47,16 @@ export default function LandingPage({ onOpenLoginModal }) {
     };
 
     fetchLiveIndianUpdates();
-    // Har 1 ghante (3600000 ms) me live update fetch karega
     const interval = setInterval(fetchLiveIndianUpdates, 3600000);
     return () => clearInterval(interval);
   }, []);
 
   const govtPortals = [
-    { name: "Staff Selection Commission (SSC)", url: "https://ssc.gov.in", desc: "Official Combined Graduate & Higher Secondary Recruitment" },
-    { name: "Railway Recruitment Boards (RRB)", url: "https://indianrailways.gov.in", desc: "NTPC, Group D, ALP & Technical Cadres" },
-    { name: "National Testing Agency (NTA)", url: "https://nta.ac.in", desc: "National Level Eligibility & Entrance Examinations" },
-    { name: "Union Public Service Commission", url: "https://upsc.gov.in", desc: "Civil Services & Combined Defence Exams" },
-    { name: "DigiLocker Govt Credentials", url: "https://www.digilocker.gov.in", desc: "National Academic Depository & Certificates Verification" }
-  ];
-
-  const examCategories = [
-    { code: "SSC-CGL", name: "Combined Graduate Level", pattern: "Tier-1 (100 Qs / 60 Min)", status: "Active Mock Matrix" },
-    { code: "SSC-CHSL", name: "Combined Higher Secondary", pattern: "Tier-1 (100 Qs / 60 Min)", status: "Simulation Ready" },
-    { code: "RRB-NTPC", name: "Non-Technical Popular", pattern: "CBT-1 (100 Qs / 90 Min)", status: "TCS Engine Active" },
-    { code: "SSC-CPO", name: "Central Police Organization", pattern: "Paper-1 (200 Qs / 120 Min)", status: "Certified Setup" }
+    { name: "Staff Selection Commission (SSC)", url: "[https://ssc.gov.in](https://ssc.gov.in)", desc: "Official Combined Graduate & Higher Secondary Recruitment" },
+    { name: "Railway Recruitment Boards (RRB)", url: "[https://indianrailways.gov.in](https://indianrailways.gov.in)", desc: "NTPC, Group D, ALP & Technical Cadres" },
+    { name: "National Testing Agency (NTA)", url: "[https://nta.ac.in](https://nta.ac.in)", desc: "National Level Eligibility & Entrance Examinations" },
+    { name: "Union Public Service Commission", url: "[https://upsc.gov.in](https://upsc.gov.in)", desc: "Civil Services & Combined Defence Exams" },
+    { name: "DigiLocker Govt Credentials", url: "[https://www.digilocker.gov.in](https://www.digilocker.gov.in)", desc: "National Academic Depository & Certificates Verification" }
   ];
 
   return (
@@ -153,21 +154,25 @@ export default function LandingPage({ onOpenLoginModal }) {
           </div>
         </div>
 
-        {/* Supported Exams Matrix */}
+        {/* Point 10: Dynamic Public Trial & Demo Exam Showcase */}
         <div className="space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-            <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-300">Supported CBT Examination Frameworks</h2>
-            <span className="text-xs text-emerald-400 font-semibold">TCS Pattern 100% Certified</span>
+            <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-300">Instant Sandbox Demo Examination Frameworks</h2>
+            <span className="text-xs text-teal-400 font-semibold">⚡ Click any card to launch sandbox mode (No Login Required)</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {examCategories.map((exam, i) => (
-              <div key={i} className="bg-slate-900/60 border border-slate-800 p-4 rounded-2xl hover:border-slate-700 transition">
+              <div 
+                key={i} 
+                onClick={() => onLaunchSandboxDemo(exam)}
+                className="bg-slate-900/80 border border-slate-800 hover:border-teal-500 p-4 rounded-2xl cursor-pointer transition transform hover:-translate-y-1 shadow-lg group"
+              >
                 <div className="flex justify-between items-start mb-2">
-                  <span className="font-mono text-xs font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">{exam.code}</span>
-                  <span className="text-[10px] text-slate-500">{exam.status}</span>
+                  <span className="font-mono text-xs font-black text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/20">{exam.code}</span>
+                  <span className="text-[10px] text-teal-400 font-bold group-hover:underline">Launch Demo →</span>
                 </div>
-                <h3 className="font-bold text-sm text-slate-200">{exam.name}</h3>
+                <h3 className="font-bold text-sm text-slate-200 group-hover:text-white transition">{exam.name}</h3>
                 <p className="text-xs text-slate-400 mt-1">{exam.pattern}</p>
               </div>
             ))}
