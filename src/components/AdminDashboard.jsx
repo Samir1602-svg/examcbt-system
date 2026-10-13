@@ -16,11 +16,17 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   const [registeredStudents, setRegisteredStudents] = useState([]);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
 
+  // Directorate Circulars Management States
+  const [circulars, setCirculars] = useState(() => {
+    return JSON.parse(localStorage.getItem('cbt_directorate_circulars') || '[]');
+  });
+  const [circularTitle, setCircularTitle] = useState('');
+  const [circularFile, setCircularFile] = useState(null);
+
   // Selected Test for Editing
   const [selectedTestId, setSelectedTestId] = useState(null);
   const [editingTest, setEditingTest] = useState(null);
 
-  // Exact prompt for Gemini / ChatGPT with PDF
   const geminiPromptText = `Please analyze this attached SSC/TCS official question paper PDF and extract all questions into the exact JSON format below. Do not write any explanations, markdown notes or text outside the JSON array:
 
 [
@@ -40,7 +46,6 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
     setTimeout(() => setCopiedPrompt(false), 3000);
   };
 
-  // Fetch Central Students from Render Cloud + LocalStorage
   const fetchStudents = async () => {
     let combined = [];
     try {
@@ -55,7 +60,6 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
       console.warn("Could not fetch remote students:", e);
     }
 
-    // Merge with LocalStorage
     const local = JSON.parse(localStorage.getItem('cbt_students') || '[]');
     local.forEach(locS => {
       if (!combined.some(c => c.id === locS.id)) {
@@ -70,13 +74,44 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
     fetchStudents();
   }, []);
 
-  // Point 7: Delete / Revoke Student Handler
   const handleRevokeStudent = (studentId) => {
     if (window.confirm("Are you sure you want to permanently revoke and remove this student from the portal?")) {
       const updatedList = registeredStudents.filter(s => s.id !== studentId);
       setRegisteredStudents(updatedList);
       localStorage.setItem('cbt_students', JSON.stringify(updatedList));
       alert("Student access successfully revoked and record removed.");
+    }
+  };
+
+  // Handle Publishing Directorate Circulars
+  const handlePublishCircular = (e) => {
+    e.preventDefault();
+    if (!circularTitle.trim()) {
+      alert("Kripya circular ka title enter karein!");
+      return;
+    }
+
+    const newCircular = {
+      id: `circ-${Date.now()}`,
+      title: circularTitle.trim(),
+      fileName: circularFile ? circularFile.name : "Official_Directorate_Circular.pdf",
+      date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      link: "#"
+    };
+
+    const updatedCirculars = [newCircular, ...circulars];
+    setCirculars(updatedCirculars);
+    localStorage.setItem('cbt_directorate_circulars', JSON.stringify(updatedCirculars));
+    setCircularTitle('');
+    setCircularFile(null);
+    alert("Directorate circular successfully published to portal announcements!");
+  };
+
+  const handleDeleteCircular = (circId) => {
+    if (window.confirm("Are you sure you want to delete this circular?")) {
+      const updated = circulars.filter(c => c.id !== circId);
+      setCirculars(updated);
+      localStorage.setItem('cbt_directorate_circulars', JSON.stringify(updated));
     }
   };
 
@@ -257,7 +292,7 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
         </div>
 
         {/* Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 sm:gap-4">
           <div onClick={() => setActiveTab('students')} className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Total Registered Students</span>
             <div className="text-2xl sm:text-3xl font-black text-amber-400 mt-1">{registeredStudents.length}</div>
@@ -267,6 +302,11 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
             <span className="text-xs text-slate-400">Total Live Tests</span>
             <div className="text-2xl sm:text-3xl font-black text-emerald-400 mt-1">{existingTests.length}</div>
             <span className="text-[10px] text-emerald-400 font-bold block mt-1">Click to edit questions →</span>
+          </div>
+          <div onClick={() => setActiveTab('circulars')} className="bg-slate-900 border border-slate-800 hover:border-purple-500/50 p-4 rounded-2xl cursor-pointer transition">
+            <span className="text-xs text-slate-400">Active Circulars</span>
+            <div className="text-2xl sm:text-3xl font-black text-purple-400 mt-1">{circulars.length}</div>
+            <span className="text-[10px] text-purple-400 font-bold block mt-1">Manage announcements →</span>
           </div>
           <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
             <span className="text-xs text-slate-400">AI Engine Support</span>
@@ -290,6 +330,12 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'pdf' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
           >
             ⚡ Add / Import New Paper
+          </button>
+          <button
+            onClick={() => setActiveTab('circulars')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'circulars' ? 'bg-purple-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
+          >
+            📢 Directorate Circulars ({circulars.length})
           </button>
           <button
             onClick={() => { setActiveTab('students'); fetchStudents(); }}
@@ -503,7 +549,82 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
           </div>
         )}
 
-        {/* TAB 3: CANDIDATE RECORDS & REVOKE CONTROLS (Point 7) */}
+        {/* TAB 3: DIRECTORATE CIRCULARS MANAGEMENT (Point 9) */}
+        {activeTab === 'circulars' && (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-xl">
+            <div>
+              <span className="text-[10px] font-mono font-bold text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 rounded">
+                Official Announcements Engine
+              </span>
+              <h3 className="text-lg font-black text-white mt-2">Publish Directorate Circular or Notification</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Upload official circulars via PDF or JSON format. These will appear instantly as dynamic announcement blocks above the external website links on the portal.
+              </p>
+            </div>
+
+            <form onSubmit={handlePublishCircular} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">Circular Title / Announcement *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Directorate Notice: Revised Normalization Formula for SSC CGL 2026"
+                  value={circularTitle}
+                  onChange={(e) => setCircularTitle(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">Upload Circular Document (PDF / JSON)</label>
+                <input
+                  type="file"
+                  accept=".pdf,.json"
+                  onChange={(e) => setCircularFile(e.target.files[0])}
+                  className="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-purple-500 file:text-slate-950 hover:file:bg-purple-400 cursor-pointer bg-slate-950 border border-slate-800 rounded-xl p-2"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-black py-3 rounded-2xl text-xs uppercase tracking-wider shadow-lg shadow-purple-500/20 transition"
+              >
+                📢 Broadcast Circular to Portal Announcements →
+              </button>
+            </form>
+
+            <div className="space-y-3 pt-4 border-t border-slate-800">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Published Active Circulars ({circulars.length})</h4>
+              {circulars.length === 0 ? (
+                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-6 text-center text-slate-500 text-xs">
+                  No active circulars published. The announcement block will remain hidden on the portal.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {circulars.map((circ) => (
+                    <div key={circ.id} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
+                      <div>
+                        <span className="text-[10px] font-mono text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                          {circ.date}
+                        </span>
+                        <h5 className="font-bold text-xs text-white mt-1">{circ.title}</h5>
+                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">File: {circ.fileName}</p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteCircular(circ.id)}
+                        className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 px-3 py-1.5 rounded-lg text-xs font-bold transition"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: CANDIDATE RECORDS */}
         {activeTab === 'students' && (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
             <div className="p-4 border-b border-slate-800 flex justify-between items-center">
