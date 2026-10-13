@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
+const API_BASE_URL = (process.env.REACT_APP_API_URL || 'https://examcbt-backend.onrender.com').replace(/\/$/, "");
+
 export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
   const [liveNews, setLiveNews] = useState([
     { tag: "GOVT EXAM", text: "Staff Selection Commission releases official CBT simulation advisory." },
@@ -20,6 +22,7 @@ export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [isFaqOpen, setIsFaqOpen] = useState(false);
   const [feedbackSuccess, setFeedbackSuccess] = useState(false);
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [feedbackForm, setFeedbackForm] = useState({
     fullName: '',
     email: '',
@@ -75,21 +78,38 @@ export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
     }
   ];
 
-  const handleFeedbackSubmit = (e) => {
+  const handleFeedbackSubmit = async (e) => {
     e.preventDefault();
     if (!feedbackForm.fullName || !feedbackForm.email || !feedbackForm.phone || !feedbackForm.feedback) {
       alert("Please complete all required fields before submission.");
       return;
     }
 
-    const existing = JSON.parse(localStorage.getItem('cbt_user_feedbacks') || '[]');
+    setSubmittingFeedback(true);
     const newEntry = {
       id: `fb-${Date.now()}`,
       ...feedbackForm,
-      submittedAt: new Date().toISOString()
+      status: "PENDING",
+      submittedAt: new Date().toLocaleString('en-IN')
     };
+
+    // 1. Local Storage Backup
+    const existing = JSON.parse(localStorage.getItem('cbt_user_feedbacks') || '[]');
     existing.unshift(newEntry);
     localStorage.setItem('cbt_user_feedbacks', JSON.stringify(existing));
+
+    // 2. Central Backend Sync
+    try {
+      await fetch(`${API_BASE_URL}/api/grievances/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newEntry)
+      });
+    } catch (err) {
+      console.warn("Backend grievance sync offline fallback:", err);
+    } finally {
+      setSubmittingFeedback(false);
+    }
 
     setFeedbackSuccess(true);
     setTimeout(() => {
@@ -421,9 +441,10 @@ export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
 
                 <button 
                   type="submit"
-                  className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-emerald-500/20 active:scale-95"
+                  disabled={submittingFeedback}
+                  className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-700 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-emerald-500/20 active:scale-95"
                 >
-                  Submit Official Grievance →
+                  {submittingFeedback ? 'Logging to Server...' : 'Submit Official Grievance →'}
                 </button>
               </form>
             )}
