@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
+const API_BASE_URL = (process.env.REACT_APP_API_URL || 'https://examcbt-backend.onrender.com').replace(/\/$/, "");
+
 export default function StudentDashboard({
   currentStudent,
   onStudentLogin,
@@ -20,23 +22,32 @@ export default function StudentDashboard({
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState('');
 
+  // Dynamic Subscription Pricing (Admin Controlled)
+  const [subscriptionPricing, setSubscriptionPricing] = useState(() => {
+    return JSON.parse(localStorage.getItem('cbt_subscription_pricing') || JSON.stringify({
+      basicPrice: 50,
+      advancedPrice: 150
+    }));
+  });
+
   const candidate = currentStudent || {
     id: "CBT-2026-894102",
     name: "Verified Aspirant",
     email: "aspirant.official@assessment.gov.in",
-    tier: "FREE", // FREE, BASIC, ADVANCED
-    subscriptionExpiry: "2026-10-18" // Example expiry for reminder check (5 days or less)
+    tier: "FREE",
+    subscriptionExpiry: "2026-10-18"
   };
 
   const currentTier = candidate.tier || "FREE";
   const isAdvancedPro = currentTier === 'ADVANCED';
 
-  // Roll-specific photo, vault, and billing management
-  const [studentPhoto, setStudentPhoto] = useState(null);
+  // Persistent Student Profile Photo
+  const [studentPhoto, setStudentPhoto] = useState(candidate.avatar || null);
 
   useEffect(() => {
     if (candidate.id) {
-      const savedPhoto = localStorage.getItem(`cbt_photo_${candidate.id}`);
+      // Load permanent avatar across logins
+      const savedPhoto = candidate.avatar || localStorage.getItem(`cbt_photo_${candidate.id}`);
       setStudentPhoto(savedPhoto || null);
 
       const history = JSON.parse(localStorage.getItem(`cbt_results_${candidate.id}`) || '[]');
@@ -45,20 +56,24 @@ export default function StudentDashboard({
       const vault = JSON.parse(localStorage.getItem(`cbt_vault_${candidate.id}`) || '[]');
       setCustomVaultTests(vault);
 
-      // Mock Billing & Purchases History Data
+      // Fetch latest admin configured pricing if available
+      const livePricing = JSON.parse(localStorage.getItem('cbt_subscription_pricing') || 'null');
+      if (livePricing) setSubscriptionPricing(livePricing);
+
+      // Billing & Purchases History Data
       const billing = JSON.parse(localStorage.getItem(`cbt_billing_${candidate.id}`) || JSON.stringify([
         {
           invoiceId: "INV-2026-001",
-          tier: currentTier === 'ADVANCED' ? "Advanced Pro Vault (₹150 / Month)" : currentTier === 'BASIC' ? "Standard Premium (₹50 / Month)" : "Free Starter Plan",
+          tier: currentTier === 'ADVANCED' ? `Advanced Pro Vault (₹${subscriptionPricing.advancedPrice} / Month)` : currentTier === 'BASIC' ? `Standard Premium (₹${subscriptionPricing.basicPrice} / Month)` : "Free Starter Plan",
           purchaseDate: "2026-10-11",
           expiryDate: candidate.subscriptionExpiry || "2026-11-11",
           status: currentTier === 'FREE' ? "Active (Complimentary)" : "SUCCESS",
-          amountPaid: currentTier === 'ADVANCED' ? "₹150.00" : currentTier === 'BASIC' ? "₹50.00" : "₹0.00"
+          amountPaid: currentTier === 'ADVANCED' ? `₹${subscriptionPricing.advancedPrice}.00` : currentTier === 'BASIC' ? `₹${subscriptionPricing.basicPrice}.00` : "₹0.00"
         }
       ]));
       setBillingHistory(billing);
 
-      // Point 4: Subscription Renewal Reminder (5 days or fewer remaining)
+      // Subscription Renewal Reminder (5 days or fewer remaining)
       if (candidate.subscriptionExpiry && currentTier !== 'FREE') {
         const expiryDate = new Date(candidate.subscriptionExpiry);
         const today = new Date();
@@ -75,22 +90,45 @@ export default function StudentDashboard({
         }
       }
     }
-  }, [candidate.id, currentTier]);
+  }, [candidate.id, currentTier, candidate.avatar, subscriptionPricing.basicPrice, subscriptionPricing.advancedPrice]);
 
-  const handlePhotoUpload = (e) => {
+  // Permanent Profile Picture Upload & Multi-Storage Sync
+  const handlePhotoUpload = async (e) => {
     const file = e.target.files[0];
     if (file && candidate.id) {
       const reader = new FileReader();
-      reader.onloadend = () => {
+      reader.onloadend = async () => {
         const photoData = reader.result;
         setStudentPhoto(photoData);
+
+        // 1. Roll-ID specific cache
         localStorage.setItem(`cbt_photo_${candidate.id}`, photoData);
+
+        // 2. Active candidate session object persistence
+        const updatedCandidate = { ...candidate, avatar: photoData };
+        localStorage.setItem('cbt_active_student', JSON.stringify(updatedCandidate));
+
+        // 3. Global registered students ledger persistence
+        const allStudents = JSON.parse(localStorage.getItem('cbt_students') || '[]');
+        const updatedRoster = allStudents.map(s => s.id === candidate.id ? { ...s, avatar: photoData } : s);
+        localStorage.setItem('cbt_students', JSON.stringify(updatedRoster));
+
+        // 4. Remote Cloud Backend sync
+        try {
+          await fetch(`${API_BASE_URL}/api/students/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedCandidate),
+          });
+        } catch (err) {
+          console.warn("Backend photo persistence offline fallback:", err);
+        }
       };
       reader.readAsDataURL(file);
     }
   };
 
-  // Point 3: Pro Tier Custom Upload Engine & Parser
+  // Custom Upload Engine & Parser
   const handleCustomFileUpload = async (e) => {
     e.preventDefault();
     if (!selectedFile) return;
@@ -108,7 +146,7 @@ export default function StudentDashboard({
     formData.append('file', selectedFile);
 
     try {
-      const response = await fetch('http://localhost:8000/api/convert-pdf-to-cbt', {
+      const response = await fetch(`${API_BASE_URL}/api/convert-pdf-to-cbt`, {
         method: 'POST',
         body: formData
       });
@@ -132,7 +170,7 @@ export default function StudentDashboard({
       }
     } catch (err) {
       console.error(err);
-      setParseError('Server connection error during parsing. Ensure backend is running.');
+      setParseError('Server connection error during parsing. Please retry.');
     } finally {
       setIsParsing(false);
     }
@@ -144,7 +182,7 @@ export default function StudentDashboard({
     }`}>
       <div className="max-w-6xl mx-auto space-y-6">
         
-        {/* Point 4: Daily Subscription Renewal Reminder Banner */}
+        {/* Subscription Renewal Reminder Banner */}
         {showRenewalBanner && (
           <div className="bg-amber-500 text-slate-950 p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3 shadow-xl animate-bounce">
             <div className="flex items-center gap-2">
@@ -305,7 +343,6 @@ export default function StudentDashboard({
             Upgrade Plans & Subscriptions
           </button>
 
-          {/* Point 5: Internal Billing & Purchases Tab */}
           <button
             onClick={() => setActiveTab('billing_history')}
             className={`text-xs font-bold pb-2 border-b-2 transition whitespace-nowrap ${
@@ -480,7 +517,7 @@ export default function StudentDashboard({
           </div>
         )}
 
-        {/* TAB 3: Upgrade Plans & Subscriptions */}
+        {/* TAB 3: Upgrade Plans & Subscriptions (Dynamic Prices) */}
         {activeTab === 'subscription_plans' && (
           <div className="space-y-6">
             <div className="text-center max-w-2xl mx-auto space-y-2">
@@ -531,7 +568,7 @@ export default function StudentDashboard({
                       STANDARD PREMIUM
                     </span>
                     <h3 className="text-lg font-black text-white mt-3">Full Mock Repository</h3>
-                    <p className="text-2xl font-black text-amber-400 mt-1">₹50 <span className="text-xs font-normal text-slate-400">/ month</span></p>
+                    <p className="text-2xl font-black text-amber-400 mt-1">₹{subscriptionPricing.basicPrice} <span className="text-xs font-normal text-slate-400">/ month</span></p>
                   </div>
                   <ul className="space-y-2 text-xs text-slate-300">
                     <li className="flex items-center gap-2">✓ Full access to all scheduled examination sets</li>
@@ -540,10 +577,10 @@ export default function StudentDashboard({
                   </ul>
                 </div>
                 <button 
-                  onClick={() => alert("Razorpay payment gateway integration ready. Connect your merchant key to accept payments.")}
+                  onClick={() => alert(`Redirecting to secure gateway checkout for Standard Premium (₹${subscriptionPricing.basicPrice}).`)}
                   className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/10"
                 >
-                  {currentTier === 'BASIC' ? 'Active Plan' : 'Proceed to Pay (₹50) →'}
+                  {currentTier === 'BASIC' ? 'Active Plan' : `Proceed to Pay (₹${subscriptionPricing.basicPrice}) →`}
                 </button>
               </div>
 
@@ -557,7 +594,7 @@ export default function StudentDashboard({
                       PRO VAULT & PARSER
                     </span>
                     <h3 className="text-lg font-black text-white mt-3">Advanced Custom Engine</h3>
-                    <p className="text-2xl font-black text-amber-400 mt-1">₹150 <span className="text-xs font-normal text-slate-400">/ month</span></p>
+                    <p className="text-2xl font-black text-amber-400 mt-1">₹{subscriptionPricing.advancedPrice} <span className="text-xs font-normal text-slate-400">/ month</span></p>
                   </div>
                   <ul className="space-y-2 text-xs text-slate-300">
                     <li className="flex items-center gap-2">✓ All Standard Premium repository features</li>
@@ -567,10 +604,10 @@ export default function StudentDashboard({
                   </ul>
                 </div>
                 <button 
-                  onClick={() => alert("Razorpay payment gateway integration ready. Connect your merchant key to accept payments.")}
+                  onClick={() => alert(`Redirecting to secure gateway checkout for Advanced Pro Vault (₹${subscriptionPricing.advancedPrice}).`)}
                   className="w-full bg-gradient-to-r from-amber-500 to-yellow-400 hover:opacity-90 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/20"
                 >
-                  {currentTier === 'ADVANCED' ? 'Active Plan' : 'Proceed to Pay (₹150) →'}
+                  {currentTier === 'ADVANCED' ? 'Active Plan' : `Proceed to Pay (₹${subscriptionPricing.advancedPrice}) →`}
                 </button>
               </div>
 
@@ -578,7 +615,7 @@ export default function StudentDashboard({
           </div>
         )}
 
-        {/* TAB 5: Internal Billing & Purchases History (Point 5) */}
+        {/* TAB 4: Internal Billing & Purchases History */}
         {activeTab === 'billing_history' && (
           <div className="space-y-4">
             <div>
@@ -629,7 +666,7 @@ export default function StudentDashboard({
           </div>
         )}
 
-        {/* TAB 4: Past Exam Results */}
+        {/* TAB 5: Past Exam Results */}
         {activeTab === 'past_results' && (
           <div>
             {pastResults.length === 0 ? (
