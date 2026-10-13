@@ -91,48 +91,60 @@ export default function StudentDashboard({
     }
   }, [candidate.id, currentTier, candidate.avatar, subscriptionPricing.basicPrice, subscriptionPricing.advancedPrice]);
 
-  // Photo Upload Handler with GLOBAL state propagation
+  // Photo Upload Handler with Canvas Compression & Multi-tier Persistence
   const handlePhotoUpload = (e) => {
     const file = e.target.files[0];
     if (file && candidate.id) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        const photoData = reader.result;
-        setStudentPhoto(photoData);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          // Compress into lightweight 150x150 thumbnail so localStorage never overflows
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          canvas.width = 150;
+          canvas.height = 150;
+          ctx.drawImage(img, 0, 0, 150, 150);
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
 
-        // 1. Roll-ID specific persistent storage
-        localStorage.setItem(`cbt_photo_${candidate.id}`, photoData);
+          // 1. Local component state update
+          setStudentPhoto(compressedBase64);
 
-        // 2. Updated candidate object with embedded avatar
-        const updatedCandidate = { 
-          ...candidate, 
-          avatar: photoData,
-          photo: photoData 
+          // 2. Roll-ID specific persistent storage
+          localStorage.setItem(`cbt_photo_${candidate.id}`, compressedBase64);
+
+          // 3. Updated candidate object
+          const updatedCandidate = { 
+            ...candidate, 
+            avatar: compressedBase64,
+            photo: compressedBase64 
+          };
+
+          // 4. Update global App.jsx state immediately
+          if (onUpdateStudentProfile) {
+            onUpdateStudentProfile(updatedCandidate);
+          }
+
+          // 5. Update persistent active student in localStorage
+          localStorage.setItem('cbt_active_student', JSON.stringify(updatedCandidate));
+
+          // 6. Update global registered students ledger
+          const allStudents = JSON.parse(localStorage.getItem('cbt_students') || '[]');
+          const updatedRoster = allStudents.map(s => 
+            (s.id === candidate.id || s.email === candidate.email) 
+              ? { ...s, avatar: compressedBase64, photo: compressedBase64 } 
+              : s
+          );
+          localStorage.setItem('cbt_students', JSON.stringify(updatedRoster));
+
+          // 7. Backend persistent cloud sync
+          fetch(`${API_BASE_URL}/api/students/update-profile`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: candidate.id, avatar: compressedBase64 }),
+          }).catch(err => console.warn("Background avatar sync fallback:", err));
         };
-
-        // 3. Update global App.jsx state immediately
-        if (onUpdateStudentProfile) {
-          onUpdateStudentProfile(updatedCandidate);
-        }
-
-        // 4. Update persistent active student in localStorage
-        localStorage.setItem('cbt_active_student', JSON.stringify(updatedCandidate));
-
-        // 5. Update global registered students ledger
-        const allStudents = JSON.parse(localStorage.getItem('cbt_students') || '[]');
-        const updatedRoster = allStudents.map(s => 
-          (s.id === candidate.id || s.email === candidate.email) 
-            ? { ...s, avatar: photoData, photo: photoData } 
-            : s
-        );
-        localStorage.setItem('cbt_students', JSON.stringify(updatedRoster));
-
-        // 6. Backend background sync (non-blocking)
-        fetch(`${API_BASE_URL}/api/students/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedCandidate),
-        }).catch(err => console.warn("Background photo sync offline:", err));
+        img.src = event.target.result;
       };
       reader.readAsDataURL(file);
     }
