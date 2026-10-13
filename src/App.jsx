@@ -7,7 +7,7 @@ import ExamResultAnalytics from './components/ExamResultAnalytics';
 import AdminDashboard from './components/AdminDashboard';
 import CombinedAuthModal from './components/AuthModal';
 
-const API_BASE_URL = (process.env.REACT_APP_API_URL || '[https://examcbt-backend.onrender.com](https://examcbt-backend.onrender.com)').replace(/\/$/, "");
+const API_BASE_URL = (process.env.REACT_APP_API_URL || 'https://examcbt-backend.onrender.com').replace(/\/$/, "");
 
 const DEFAULT_INITIAL_TESTS = [
   {
@@ -128,25 +128,29 @@ export default function App() {
     }
   };
 
-  // Point 10: Sandbox Demo Exam Launch Handler for Unregistered Visitors
+  // Launch sandbox mode immediately without login
   const handleLaunchSandboxDemo = (demoExam) => {
+    const sandboxQuestions = (mockTests && mockTests.length > 0 && mockTests[0].questions)
+      ? mockTests[0].questions
+      : DEFAULT_INITIAL_TESTS[0].questions;
+
     const sandboxTest = {
-      id: `sandbox-${demoExam.code.toLowerCase()}`,
-      title: `${demoExam.name} (${demoExam.code}) - Sandbox Trial`,
+      id: `sandbox-${(demoExam?.code || 'demo').toLowerCase()}`,
+      title: `${demoExam?.name || 'Combined Exam'} (${demoExam?.code || 'DEMO'}) - Sandbox Trial`,
       duration_mins: 30,
-      questions: mockTests[0]?.questions || DEFAULT_INITIAL_TESTS[0].questions
+      questions: sandboxQuestions
     };
+
     setActiveTest(sandboxTest);
     setCurrentStudent({
       id: "SANDBOX-VISITOR",
-      name: "Demo Visitor",
-      email: "visitor@assessment.gov.in",
+      name: "Trial Candidate",
+      email: "sandbox@examcbt.demo",
       tier: "FREE"
     });
     setCurrentScreen('exam');
   };
 
-  // Exam Finish & Persistent Result Save
   const handleExamFinish = (result) => {
     setExamResultData(result);
 
@@ -175,12 +179,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 font-sans">
-      {/* Interactive Breaking News Ticker */}
-      <NewsTicker/>
+      <NewsTicker />
 
       {/* 1. Landing Screen */}
       {currentScreen === 'landing' && (
-        <LandingPage onOpenLoginModal="{()"> {
+        <LandingPage
+          onOpenLoginModal={() => {
             if (currentStudent && currentStudent.id !== "SANDBOX-VISITOR") {
               setCurrentScreen('student_dashboard');
             } else {
@@ -193,7 +197,12 @@ export default function App() {
 
       {/* 2. Student Dashboard */}
       {currentScreen === 'student_dashboard' && (
-        <StudentDashboard currentStudent="{currentStudent}" mockTests="{mockTests}" onLogout="{handleStudentLogout}" onStartMock="{(test)" onStudentLogin="{handleStudentLoginSuccess}"> {
+        <StudentDashboard
+          currentStudent={currentStudent}
+          onStudentLogin={handleStudentLoginSuccess}
+          onLogout={handleStudentLogout}
+          mockTests={mockTests}
+          onStartMock={(test) => {
             setActiveTest(test);
             setCurrentScreen('exam');
           }}
@@ -204,26 +213,39 @@ export default function App() {
 
       {/* 3. TCS iON Exam Screen */}
       {currentScreen === 'exam' && activeTest && (
-        <CBTExamInterface onExitExam="{()" onFinishExam="{handleExamFinish}" studentData="{currentStudent}" testData="{activeTest}"> setCurrentScreen(currentStudent?.id === "SANDBOX-VISITOR" ? 'landing' : 'student_dashboard')}
+        <CBTExamInterface
+          testData={activeTest}
+          studentData={currentStudent}
+          onFinishExam={handleExamFinish}
+          onExitExam={() => setCurrentScreen(currentStudent?.id === "SANDBOX-VISITOR" ? 'landing' : 'student_dashboard')}
         />
       )}
 
       {/* 4. Scorecard Analytics */}
       {currentScreen === 'result' && examResultData && (
-        <ExamResultAnalytics onReattempt="{()" resultData="{examResultData}" studentData="{currentStudent}"> setCurrentScreen('exam')}
+        <ExamResultAnalytics
+          resultData={examResultData}
+          studentData={currentStudent}
+          onReattempt={() => setCurrentScreen('exam')}
           onGoToDashboard={() => setCurrentScreen(currentStudent?.id === "SANDBOX-VISITOR" ? 'landing' : 'student_dashboard')}
         />
       )}
 
       {/* 5. Admin Dashboard */}
       {currentScreen === 'admin' && (
-        <AdminDashboard existingTests="{mockTests}" onBackToHome="{()" onDeleteTest="{handleDeleteTest}" onPublishTest="{handlePublishNewTest}" onUpdateExistingTest="{handleUpdateExistingTest}"> setCurrentScreen('landing')}
+        <AdminDashboard
+          existingTests={mockTests}
+          onPublishTest={handlePublishNewTest}
+          onUpdateExistingTest={handleUpdateExistingTest}
+          onDeleteTest={handleDeleteTest}
+          onBackToHome={() => setCurrentScreen('landing')}
         />
       )}
 
       {/* Unified Login Modal */}
       {isAuthModalOpen && (
-        <CombinedAuthModal onClose="{()"> setIsAuthModalOpen(false)}
+        <CombinedAuthModal
+          onClose={() => setIsAuthModalOpen(false)}
           onStudentLogin={handleStudentLoginSuccess}
           onAdminLogin={handleAdminLoginSuccess}
         />
