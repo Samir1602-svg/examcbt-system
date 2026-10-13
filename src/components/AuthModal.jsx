@@ -32,7 +32,6 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
   
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Password Strength Evaluator Logic
   const evaluatePasswordStrength = (pwd) => {
     if (!pwd) return { label: 'None', color: 'bg-slate-800', score: 0 };
     let score = 0;
@@ -60,7 +59,6 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
     const savedStudents = JSON.parse(localStorage.getItem('cbt_students') || '[]');
 
     if (isExistingUser) {
-      // Login Flexibility: Email OR Phone + Password
       if (!loginIdentifier.trim() || !loginPassword.trim()) {
         setErrorMsg("Please enter your registered Email/Phone and Password.");
         return;
@@ -78,12 +76,21 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
           setErrorMsg("Authentication Failed: Incorrect password entered.");
           return;
         }
-        onStudentLogin(existing);
+
+        // Attach permanently saved avatar if present in localStorage
+        const persistedPhoto = existing.avatar || localStorage.getItem(`cbt_photo_${existing.id}`);
+        const authenticatedCandidate = {
+          ...existing,
+          avatar: persistedPhoto || null
+        };
+
+        // Cache active session immediately
+        localStorage.setItem('cbt_active_student', JSON.stringify(authenticatedCandidate));
+        onStudentLogin(authenticatedCandidate);
       } else {
         setErrorMsg("No candidate account found matching this Email, Phone, or Roll ID.");
       }
     } else {
-      // Registration: Require both Email & Phone, and Strict Password Strength Gate
       if (!candidateName.trim() || !candidateEmail.trim() || !candidatePhone.trim() || !candidatePassword) {
         setErrorMsg("All registration fields including Email, Phone and Password are mandatory.");
         return;
@@ -102,15 +109,15 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
         email: candidateEmail.trim(),
         phone: candidatePhone.trim(),
         password: candidatePassword,
+        avatar: null,
         tier: "FREE",
         createdAt: new Date().toLocaleDateString('en-IN')
       };
 
-      // 1. Local Cache
       savedStudents.unshift(newStudent);
       localStorage.setItem('cbt_students', JSON.stringify(savedStudents));
+      localStorage.setItem('cbt_active_student', JSON.stringify(newStudent));
 
-      // 2. Central Backend Sync
       try {
         await fetch(`${API_BASE_URL}/api/students/register`, {
           method: 'POST',
@@ -125,7 +132,6 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
     }
   };
 
-  // Two-Factor Verification Step
   const handleVerifyCandidateIdentity = (e) => {
     e.preventDefault();
     setErrorMsg('');
@@ -155,7 +161,6 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
     }
   };
 
-  // Set New Password Step
   const handleResetPassword = async (e) => {
     e.preventDefault();
     setErrorMsg('');
@@ -185,7 +190,6 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
 
     localStorage.setItem('cbt_students', JSON.stringify(updatedList));
 
-    // Sync to backend register endpoint to update password centrally
     try {
       const updatedRecord = { ...matchedCandidate, password: newPassword };
       await fetch(`${API_BASE_URL}/api/students/register`, {
@@ -258,7 +262,6 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
         {roleTab === 'candidate' ? (
           <div className="space-y-4">
             {isForgotView ? (
-              /* Two-Factor Forgot Password View */
               <div className="space-y-4">
                 <div className="border-b border-slate-800 pb-2">
                   <span className="text-[10px] font-mono font-bold text-amber-400 uppercase tracking-widest bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
@@ -328,7 +331,6 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
                         className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white outline-none focus:border-emerald-500"
                       />
 
-                      {/* Password Strength Meter */}
                       <div className="mt-2 space-y-1">
                         <div className="flex justify-between items-center text-[10px]">
                           <span className="text-slate-400">Strength:</span>
@@ -374,7 +376,6 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
                 )}
               </div>
             ) : (
-              /* Normal Login & Registration View */
               <>
                 <div className="flex border-b border-slate-800 pb-2 text-xs font-semibold justify-around">
                   <button
@@ -474,7 +475,6 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
                           className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
                         />
                         
-                        {/* Password Strength Meter & Guidelines */}
                         <div className="mt-2 space-y-1">
                           <div className="flex justify-between items-center text-[10px]">
                             <span className="text-slate-400">Password Strength:</span>
