@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 const API_BASE_URL = (process.env.REACT_APP_API_URL || 'https://examcbt-backend.onrender.com').replace(/\/$/, "");
 
 export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, onDeleteTest, onBackToHome, existingTests = [] }) {
-  const [activeTab, setActiveTab] = useState('showcase'); // Default open showcase or pdf
+  const [activeTab, setActiveTab] = useState('grievances'); // Default open grievances desk
   const [uploadMethod, setUploadMethod] = useState('gemini_json');
   
   const [testTitle, setTestTitle] = useState('');
@@ -23,7 +23,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   const [circularTitle, setCircularTitle] = useState('');
   const [circularFile, setCircularFile] = useState(null);
 
-  // Point 10: Public Trial & Demo Showcase Management States
+  // Public Trial & Demo Showcase Management States
   const [showcaseExams, setShowcaseExams] = useState(() => {
     return JSON.parse(localStorage.getItem('cbt_showcase_exams') || JSON.stringify([
       { code: "SSC-CGL", name: "Combined Graduate Level", pattern: "Tier-1 (100 Qs / 60 Min)", status: "Active Mock Matrix" },
@@ -36,6 +36,9 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   const [newShowcaseName, setNewShowcaseName] = useState('');
   const [newShowcasePattern, setNewShowcasePattern] = useState('');
   const [newShowcaseStatus, setNewShowcaseStatus] = useState('Simulation Ready');
+
+  // Grievance / Feedback Desk Management States
+  const [grievances, setGrievances] = useState([]);
 
   // Selected Test for Editing
   const [selectedTestId, setSelectedTestId] = useState(null);
@@ -84,9 +87,60 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
     setRegisteredStudents(combined);
   };
 
+  // Fetch Grievances from Cloud Backend + Local Storage
+  const fetchGrievances = async () => {
+    let list = [];
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/grievances`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'success' && Array.isArray(data.grievances)) {
+          list = data.grievances;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not fetch remote grievances:", e);
+    }
+
+    // Merge with LocalStorage
+    const local = JSON.parse(localStorage.getItem('cbt_user_feedbacks') || '[]');
+    local.forEach(locItem => {
+      if (!list.some(g => g.id === locItem.id)) {
+        list.push(locItem);
+      }
+    });
+
+    setGrievances(list);
+  };
+
   useEffect(() => {
     fetchStudents();
+    fetchGrievances();
   }, []);
+
+  const handleResolveGrievance = async (gId) => {
+    const updated = grievances.map(g => g.id === gId ? { ...g, status: 'RESOLVED' } : g);
+    setGrievances(updated);
+    localStorage.setItem('cbt_user_feedbacks', JSON.stringify(updated));
+
+    try {
+      await fetch(`${API_BASE_URL}/api/grievances/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: gId })
+      });
+    } catch (e) {
+      console.warn("Remote resolve status sync error:", e);
+    }
+  };
+
+  const handleDeleteGrievance = (gId) => {
+    if (window.confirm("Are you sure you want to delete this grievance record?")) {
+      const updated = grievances.filter(g => g.id !== gId);
+      setGrievances(updated);
+      localStorage.setItem('cbt_user_feedbacks', JSON.stringify(updated));
+    }
+  };
 
   const handleRevokeStudent = (studentId) => {
     if (window.confirm("Are you sure you want to permanently revoke and remove this student from the portal?")) {
@@ -97,7 +151,6 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
     }
   };
 
-  // Handle Publishing Directorate Circulars
   const handlePublishCircular = (e) => {
     e.preventDefault();
     if (!circularTitle.trim()) {
@@ -129,7 +182,6 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
     }
   };
 
-  // Point 10: CRUD Controls for Public Showcase Exams
   const handleAddShowcaseExam = (e) => {
     e.preventDefault();
     if (!newShowcaseCode.trim() || !newShowcaseName.trim()) {
@@ -318,6 +370,8 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
     }
   };
 
+  const pendingCount = grievances.filter(g => g.status !== 'RESOLVED').length;
+
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 sm:p-6 font-sans">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -325,7 +379,7 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-4">
           <div>
             <span className="text-[10px] font-black uppercase tracking-widest text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20">
-              Admin Portal
+              Directorate Operations Console
             </span>
             <h1 className="text-xl sm:text-2xl font-black text-white mt-1">Control Center & Test Question Manager</h1>
           </div>
@@ -338,38 +392,48 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
         </div>
 
         {/* Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4">
+          <div onClick={() => setActiveTab('grievances')} className="bg-slate-900 border border-slate-800 hover:border-rose-500/50 p-4 rounded-2xl cursor-pointer transition">
+            <span className="text-xs text-slate-400">Support Grievances</span>
+            <div className="text-2xl sm:text-3xl font-black text-rose-400 mt-1">{pendingCount} <span className="text-xs text-slate-500 font-normal">Pending</span></div>
+            <span className="text-[10px] text-rose-400 font-bold block mt-1">Resolve candidate tickets →</span>
+          </div>
           <div onClick={() => setActiveTab('students')} className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 p-4 rounded-2xl cursor-pointer transition">
-            <span className="text-xs text-slate-400">Total Registered Students</span>
+            <span className="text-xs text-slate-400">Total Registered</span>
             <div className="text-2xl sm:text-3xl font-black text-amber-400 mt-1">{registeredStudents.length}</div>
-            <span className="text-[10px] text-slate-500 block mt-1">Click to view roster →</span>
+            <span className="text-[10px] text-slate-500 block mt-1">View roster →</span>
           </div>
           <div onClick={() => setActiveTab('live_tests')} className="bg-slate-900 border border-slate-800 hover:border-emerald-500/50 p-4 rounded-2xl cursor-pointer transition">
-            <span className="text-xs text-slate-400">Total Live Tests</span>
+            <span className="text-xs text-slate-400">Live Mock Tests</span>
             <div className="text-2xl sm:text-3xl font-black text-emerald-400 mt-1">{existingTests.length}</div>
-            <span className="text-[10px] text-emerald-400 font-bold block mt-1">Click to edit questions →</span>
+            <span className="text-[10px] text-emerald-400 font-bold block mt-1">Edit questions →</span>
           </div>
           <div onClick={() => setActiveTab('showcase')} className="bg-slate-900 border border-slate-800 hover:border-teal-500/50 p-4 rounded-2xl cursor-pointer transition">
-            <span className="text-xs text-slate-400">Demo Showcase Exams</span>
+            <span className="text-xs text-slate-400">Demo Showcase</span>
             <div className="text-2xl sm:text-3xl font-black text-teal-400 mt-1">{showcaseExams.length}</div>
-            <span className="text-[10px] text-teal-400 font-bold block mt-1">Manage landing cards →</span>
+            <span className="text-[10px] text-teal-400 font-bold block mt-1">Landing cards →</span>
           </div>
-          <div onClick={() => setActiveTab('circulars')} className="bg-slate-900 border border-slate-800 hover:border-purple-500/50 p-4 rounded-2xl cursor-pointer transition">
-            <span className="text-xs text-slate-400">Active Circulars</span>
+          <div onClick={() => setActiveTab('circulars')} className="bg-slate-900 border border-slate-800 hover:border-purple-500/50 p-4 rounded-2xl cursor-pointer transition col-span-2 sm:col-span-1">
+            <span className="text-xs text-slate-400">Circulars</span>
             <div className="text-2xl sm:text-3xl font-black text-purple-400 mt-1">{circulars.length}</div>
-            <span className="text-[10px] text-purple-400 font-bold block mt-1">Manage announcements →</span>
-          </div>
-          <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
-            <span className="text-xs text-slate-400">AI Engine Support</span>
-            <div className="text-xs sm:text-sm font-bold text-emerald-400 mt-2 flex items-center space-x-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Direct PDF + Gemini JSON Dual Mode</span>
-            </div>
+            <span className="text-[10px] text-purple-400 font-bold block mt-1">Announcements →</span>
           </div>
         </div>
 
-        {/* Tab Header (Ab 5 tabs properly display honge) */}
+        {/* Tab Header (6 Complete Tabs) */}
         <div className="flex space-x-2 border-b border-slate-800 pb-2 overflow-x-auto no-scrollbar">
+          <button
+            onClick={() => { setActiveTab('grievances'); fetchGrievances(); }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'grievances' ? 'bg-rose-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
+          >
+            📩 Grievances & Support ({grievances.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('showcase')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'showcase' ? 'bg-teal-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
+          >
+            🎯 Public Demo Showcase ({showcaseExams.length})
+          </button>
           <button
             onClick={() => setActiveTab('live_tests')}
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'live_tests' ? 'bg-emerald-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
@@ -381,12 +445,6 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'pdf' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
           >
             ⚡ Add / Import New Paper
-          </button>
-          <button
-            onClick={() => setActiveTab('showcase')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'showcase' ? 'bg-teal-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
-          >
-            🎯 Public Demo Showcase ({showcaseExams.length})
           </button>
           <button
             onClick={() => setActiveTab('circulars')}
@@ -402,7 +460,196 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
           </button>
         </div>
 
-        {/* TAB 1: MANAGE LIVE TESTS */}
+        {/* TAB 0: CANDIDATE GRIEVANCES & FEEDBACK RESOLUTION DESK */}
+        {activeTab === 'grievances' && (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+            <div className="p-4 border-b border-slate-800 flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-sm text-slate-200">Candidate Grievances & Resolution Desk</h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">Tickets submitted via the public feedback form. Official response TAT: within 48 hours.</p>
+              </div>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={fetchGrievances}
+                  className="text-xs bg-slate-800 hover:bg-slate-700 text-rose-400 font-bold px-3 py-1.5 rounded-lg border border-slate-700 transition"
+                >
+                  ↻ Refresh Tickets
+                </button>
+                <span className="text-xs text-slate-400">Total: {grievances.length}</span>
+              </div>
+            </div>
+
+            {grievances.length === 0 ? (
+              <div className="p-10 text-center text-slate-500 text-xs">
+                No candidate grievances logged yet. Form submissions will appear here live.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th className="p-3">Received Time</th>
+                      <th className="p-3">Candidate Details</th>
+                      <th className="p-3 w-2/5">Grievance / Message</th>
+                      <th className="p-3">Status</th>
+                      <th className="p-3 text-right">Director Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {grievances.map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-800/40">
+                        <td className="p-3 text-slate-400 whitespace-nowrap font-mono text-[11px]">
+                          {item.submittedAt || 'N/A'}
+                        </td>
+                        <td className="p-3">
+                          <div className="font-bold text-white text-xs">{item.fullName}</div>
+                          <div className="text-slate-400 text-[11px]">{item.email}</div>
+                          <div className="text-slate-500 font-mono text-[10px]">{item.phone}</div>
+                        </td>
+                        <td className="p-3 text-slate-200 leading-relaxed select-text">
+                          <div className="bg-slate-950 border border-slate-800/80 p-2.5 rounded-xl text-xs max-h-32 overflow-y-auto whitespace-pre-wrap">
+                            {item.feedback}
+                          </div>
+                        </td>
+                        <td className="p-3 whitespace-nowrap">
+                          {item.status === 'RESOLVED' ? (
+                            <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+                              ✓ RESOLVED
+                            </span>
+                          ) : (
+                            <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold animate-pulse">
+                              ● PENDING
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 text-right whitespace-nowrap space-x-2">
+                          <a
+                            href={`mailto:${item.email}?subject=Regarding your CBT Grievance Reference ${item.id}&body=Dear ${item.fullName},%0D%0A%0D%0ARegarding your submitted query:%0D%0A"${encodeURIComponent(item.feedback)}"%0D%0A%0D%0AFrom Directorate Support Desk`}
+                            className="inline-block bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30 px-2.5 py-1.5 rounded-xl font-bold transition text-[11px]"
+                            title="Reply to candidate via email"
+                          >
+                            ✉️ Reply
+                          </a>
+                          {item.status !== 'RESOLVED' && (
+                            <button
+                              onClick={() => handleResolveGrievance(item.id)}
+                              className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 px-2.5 py-1.5 rounded-xl font-bold transition text-[11px]"
+                            >
+                              ✓ Resolve
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDeleteGrievance(item.id)}
+                            className="bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 px-2.5 py-1.5 rounded-xl font-bold transition text-[11px]"
+                          >
+                            🗑️
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 1: PUBLIC TRIAL SHOWCASE EXAMS (Point 10 CRUD Manager) */}
+        {activeTab === 'showcase' && (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-xl">
+            <div>
+              <span className="text-[10px] font-mono font-bold text-teal-400 bg-teal-500/10 border border-teal-500/30 px-2 py-0.5 rounded">
+                Public Landing Frameworks
+              </span>
+              <h3 className="text-lg font-black text-white mt-2">Manage Featured Trial & Demo Exams</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Add, edit, or delete demo exams shown on the public landing page. These changes sync directly with the landing page showcase cards.
+              </p>
+            </div>
+
+            <form onSubmit={handleAddShowcaseExam} className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">Exam Code *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. SSC-CGL"
+                  value={newShowcaseCode}
+                  onChange={(e) => setNewShowcaseCode(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs uppercase font-mono text-white outline-none focus:border-teal-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">Exam Full Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Combined Graduate Level"
+                  value={newShowcaseName}
+                  onChange={(e) => setNewShowcaseName(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">Pattern Details</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Tier-1 (100 Qs / 60 Min)"
+                  value={newShowcasePattern}
+                  onChange={(e) => setNewShowcasePattern(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">Engine Status Badge</label>
+                <select
+                  value={newShowcaseStatus}
+                  onChange={(e) => setNewShowcaseStatus(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500"
+                >
+                  <option value="Active Mock Matrix">Active Mock Matrix</option>
+                  <option value="Simulation Ready">Simulation Ready</option>
+                  <option value="TCS Engine Active">TCS Engine Active</option>
+                  <option value="Certified Setup">Certified Setup</option>
+                </select>
+              </div>
+
+              <div className="sm:col-span-2 pt-2">
+                <button
+                  type="submit"
+                  className="w-full bg-teal-500 hover:bg-teal-400 text-slate-950 font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-teal-500/20"
+                >
+                  + Add Trial Showcase Exam Card
+                </button>
+              </div>
+            </form>
+
+            <div className="space-y-3 pt-2">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Current Featured Showcase Exams ({showcaseExams.length})</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {showcaseExams.map((exam, idx) => (
+                  <div key={idx} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
+                    <div>
+                      <span className="text-[10px] font-mono font-bold text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/20">
+                        {exam.code}
+                      </span>
+                      <h5 className="font-bold text-xs text-white mt-1.5">{exam.name}</h5>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{exam.pattern}</p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteShowcaseExam(idx)}
+                      className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 px-3 py-1.5 rounded-lg text-xs font-bold transition"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: MANAGE LIVE TESTS */}
         {activeTab === 'live_tests' && (
           <div className="space-y-6">
             {!editingTest ? (
@@ -494,7 +741,7 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
           </div>
         )}
 
-        {/* TAB 2: UPLOAD & SYNC */}
+        {/* TAB 3: UPLOAD & SYNC */}
         {activeTab === 'pdf' && (
           <div className="space-y-5">
             <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 max-w-md mx-auto">
@@ -603,101 +850,6 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
                 </button>
               </div>
             )}
-          </div>
-        )}
-
-        {/* TAB 3: PUBLIC TRIAL SHOWCASE EXAMS (Point 10 CRUD Manager) */}
-        {activeTab === 'showcase' && (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-xl">
-            <div>
-              <span className="text-[10px] font-mono font-bold text-teal-400 bg-teal-500/10 border border-teal-500/30 px-2 py-0.5 rounded">
-                Public Landing Frameworks
-              </span>
-              <h3 className="text-lg font-black text-white mt-2">Manage Featured Trial & Demo Exams</h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Add, edit, or delete demo exams shown on the public landing page. These changes sync directly with the landing page showcase cards.
-              </p>
-            </div>
-
-            <form onSubmit={handleAddShowcaseExam} className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-950 p-4 rounded-2xl border border-slate-800">
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">Exam Code *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. SSC-CGL"
-                  value={newShowcaseCode}
-                  onChange={(e) => setNewShowcaseCode(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs uppercase font-mono text-white outline-none focus:border-teal-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">Exam Full Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Combined Graduate Level"
-                  value={newShowcaseName}
-                  onChange={(e) => setNewShowcaseName(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">Pattern Details</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Tier-1 (100 Qs / 60 Min)"
-                  value={newShowcasePattern}
-                  onChange={(e) => setNewShowcasePattern(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">Engine Status Badge</label>
-                <select
-                  value={newShowcaseStatus}
-                  onChange={(e) => setNewShowcaseStatus(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500"
-                >
-                  <option value="Active Mock Matrix">Active Mock Matrix</option>
-                  <option value="Simulation Ready">Simulation Ready</option>
-                  <option value="TCS Engine Active">TCS Engine Active</option>
-                  <option value="Certified Setup">Certified Setup</option>
-                </select>
-              </div>
-
-              <div className="sm:col-span-2 pt-2">
-                <button
-                  type="submit"
-                  className="w-full bg-teal-500 hover:bg-teal-400 text-slate-950 font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-teal-500/20"
-                >
-                  + Add Trial Showcase Exam Card
-                </button>
-              </div>
-            </form>
-
-            <div className="space-y-3 pt-2">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Current Featured Showcase Exams ({showcaseExams.length})</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {showcaseExams.map((exam, idx) => (
-                  <div key={idx} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
-                    <div>
-                      <span className="text-[10px] font-mono font-bold text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/20">
-                        {exam.code}
-                      </span>
-                      <h5 className="font-bold text-xs text-white mt-1.5">{exam.name}</h5>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{exam.pattern}</p>
-                    </div>
-                    <button
-                      onClick={() => handleDeleteShowcaseExam(idx)}
-                      className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 px-3 py-1.5 rounded-lg text-xs font-bold transition"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         )}
 
