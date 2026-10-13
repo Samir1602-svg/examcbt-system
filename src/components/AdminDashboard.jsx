@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 const API_BASE_URL = (process.env.REACT_APP_API_URL || 'https://examcbt-backend.onrender.com').replace(/\/$/, "");
 
 export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, onDeleteTest, onBackToHome, existingTests = [] }) {
-  const [activeTab, setActiveTab] = useState('pdf');
+  const [activeTab, setActiveTab] = useState('showcase'); // Default open showcase or pdf
   const [uploadMethod, setUploadMethod] = useState('gemini_json');
   
   const [testTitle, setTestTitle] = useState('');
@@ -22,6 +22,20 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   });
   const [circularTitle, setCircularTitle] = useState('');
   const [circularFile, setCircularFile] = useState(null);
+
+  // Point 10: Public Trial & Demo Showcase Management States
+  const [showcaseExams, setShowcaseExams] = useState(() => {
+    return JSON.parse(localStorage.getItem('cbt_showcase_exams') || JSON.stringify([
+      { code: "SSC-CGL", name: "Combined Graduate Level", pattern: "Tier-1 (100 Qs / 60 Min)", status: "Active Mock Matrix" },
+      { code: "SSC-CHSL", name: "Combined Higher Secondary", pattern: "Tier-1 (100 Qs / 60 Min)", status: "Simulation Ready" },
+      { code: "RRB-NTPC", name: "Non-Technical Popular", pattern: "CBT-1 (100 Qs / 90 Min)", status: "TCS Engine Active" },
+      { code: "SSC-CPO", name: "Central Police Organization", pattern: "Paper-1 (200 Qs / 120 Min)", status: "Certified Setup" }
+    ]));
+  });
+  const [newShowcaseCode, setNewShowcaseCode] = useState('');
+  const [newShowcaseName, setNewShowcaseName] = useState('');
+  const [newShowcasePattern, setNewShowcasePattern] = useState('');
+  const [newShowcaseStatus, setNewShowcaseStatus] = useState('Simulation Ready');
 
   // Selected Test for Editing
   const [selectedTestId, setSelectedTestId] = useState(null);
@@ -112,6 +126,38 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
       const updated = circulars.filter(c => c.id !== circId);
       setCirculars(updated);
       localStorage.setItem('cbt_directorate_circulars', JSON.stringify(updated));
+    }
+  };
+
+  // Point 10: CRUD Controls for Public Showcase Exams
+  const handleAddShowcaseExam = (e) => {
+    e.preventDefault();
+    if (!newShowcaseCode.trim() || !newShowcaseName.trim()) {
+      alert("Kripya Exam Code aur Name enter karein!");
+      return;
+    }
+
+    const newExam = {
+      code: newShowcaseCode.trim().toUpperCase(),
+      name: newShowcaseName.trim(),
+      pattern: newShowcasePattern.trim() || "Tier-1 (100 Qs / 60 Min)",
+      status: newShowcaseStatus
+    };
+
+    const updated = [newExam, ...showcaseExams];
+    setShowcaseExams(updated);
+    localStorage.setItem('cbt_showcase_exams', JSON.stringify(updated));
+    setNewShowcaseCode('');
+    setNewShowcaseName('');
+    setNewShowcasePattern('');
+    alert("Demo showcase exam successfully added to landing page!");
+  };
+
+  const handleDeleteShowcaseExam = (index) => {
+    if (window.confirm("Are you sure you want to remove this exam from the landing showcase?")) {
+      const updated = showcaseExams.filter((_, idx) => idx !== index);
+      setShowcaseExams(updated);
+      localStorage.setItem('cbt_showcase_exams', JSON.stringify(updated));
     }
   };
 
@@ -292,7 +338,7 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
         </div>
 
         {/* Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 sm:gap-4">
           <div onClick={() => setActiveTab('students')} className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Total Registered Students</span>
             <div className="text-2xl sm:text-3xl font-black text-amber-400 mt-1">{registeredStudents.length}</div>
@@ -302,6 +348,11 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
             <span className="text-xs text-slate-400">Total Live Tests</span>
             <div className="text-2xl sm:text-3xl font-black text-emerald-400 mt-1">{existingTests.length}</div>
             <span className="text-[10px] text-emerald-400 font-bold block mt-1">Click to edit questions →</span>
+          </div>
+          <div onClick={() => setActiveTab('showcase')} className="bg-slate-900 border border-slate-800 hover:border-teal-500/50 p-4 rounded-2xl cursor-pointer transition">
+            <span className="text-xs text-slate-400">Demo Showcase Exams</span>
+            <div className="text-2xl sm:text-3xl font-black text-teal-400 mt-1">{showcaseExams.length}</div>
+            <span className="text-[10px] text-teal-400 font-bold block mt-1">Manage landing cards →</span>
           </div>
           <div onClick={() => setActiveTab('circulars')} className="bg-slate-900 border border-slate-800 hover:border-purple-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Active Circulars</span>
@@ -317,7 +368,7 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
           </div>
         </div>
 
-        {/* Tab Header */}
+        {/* Tab Header (Ab 5 tabs properly display honge) */}
         <div className="flex space-x-2 border-b border-slate-800 pb-2 overflow-x-auto no-scrollbar">
           <button
             onClick={() => setActiveTab('live_tests')}
@@ -330,6 +381,12 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'pdf' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
           >
             ⚡ Add / Import New Paper
+          </button>
+          <button
+            onClick={() => setActiveTab('showcase')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'showcase' ? 'bg-teal-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
+          >
+            🎯 Public Demo Showcase ({showcaseExams.length})
           </button>
           <button
             onClick={() => setActiveTab('circulars')}
@@ -549,7 +606,102 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
           </div>
         )}
 
-        {/* TAB 3: DIRECTORATE CIRCULARS MANAGEMENT (Point 9) */}
+        {/* TAB 3: PUBLIC TRIAL SHOWCASE EXAMS (Point 10 CRUD Manager) */}
+        {activeTab === 'showcase' && (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-xl">
+            <div>
+              <span className="text-[10px] font-mono font-bold text-teal-400 bg-teal-500/10 border border-teal-500/30 px-2 py-0.5 rounded">
+                Public Landing Frameworks
+              </span>
+              <h3 className="text-lg font-black text-white mt-2">Manage Featured Trial & Demo Exams</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Add, edit, or delete demo exams shown on the public landing page. These changes sync directly with the landing page showcase cards.
+              </p>
+            </div>
+
+            <form onSubmit={handleAddShowcaseExam} className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">Exam Code *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. SSC-CGL"
+                  value={newShowcaseCode}
+                  onChange={(e) => setNewShowcaseCode(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs uppercase font-mono text-white outline-none focus:border-teal-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">Exam Full Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Combined Graduate Level"
+                  value={newShowcaseName}
+                  onChange={(e) => setNewShowcaseName(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">Pattern Details</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Tier-1 (100 Qs / 60 Min)"
+                  value={newShowcasePattern}
+                  onChange={(e) => setNewShowcasePattern(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-300 block mb-1">Engine Status Badge</label>
+                <select
+                  value={newShowcaseStatus}
+                  onChange={(e) => setNewShowcaseStatus(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500"
+                >
+                  <option value="Active Mock Matrix">Active Mock Matrix</option>
+                  <option value="Simulation Ready">Simulation Ready</option>
+                  <option value="TCS Engine Active">TCS Engine Active</option>
+                  <option value="Certified Setup">Certified Setup</option>
+                </select>
+              </div>
+
+              <div className="sm:col-span-2 pt-2">
+                <button
+                  type="submit"
+                  className="w-full bg-teal-500 hover:bg-teal-400 text-slate-950 font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-teal-500/20"
+                >
+                  + Add Trial Showcase Exam Card
+                </button>
+              </div>
+            </form>
+
+            <div className="space-y-3 pt-2">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Current Featured Showcase Exams ({showcaseExams.length})</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {showcaseExams.map((exam, idx) => (
+                  <div key={idx} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
+                    <div>
+                      <span className="text-[10px] font-mono font-bold text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/20">
+                        {exam.code}
+                      </span>
+                      <h5 className="font-bold text-xs text-white mt-1.5">{exam.name}</h5>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{exam.pattern}</p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteShowcaseExam(idx)}
+                      className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 px-3 py-1.5 rounded-lg text-xs font-bold transition"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: DIRECTORATE CIRCULARS */}
         {activeTab === 'circulars' && (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-xl">
             <div>
@@ -624,7 +776,7 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
           </div>
         )}
 
-        {/* TAB 4: CANDIDATE RECORDS */}
+        {/* TAB 5: CANDIDATE RECORDS */}
         {activeTab === 'students' && (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
             <div className="p-4 border-b border-slate-800 flex justify-between items-center">
