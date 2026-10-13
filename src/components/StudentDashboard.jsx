@@ -5,6 +5,7 @@ const API_BASE_URL = (process.env.REACT_APP_API_URL || 'https://examcbt-backend.
 export default function StudentDashboard({
   currentStudent,
   onStudentLogin,
+  onUpdateStudentProfile,
   onLogout,
   mockTests = [],
   onStartMock,
@@ -41,12 +42,13 @@ export default function StudentDashboard({
   const currentTier = candidate.tier || "FREE";
   const isAdvancedPro = currentTier === 'ADVANCED';
 
-  // Persistent Student Profile Photo
-  const [studentPhoto, setStudentPhoto] = useState(candidate.avatar || null);
+  // Persistent Student Profile Photo (Multi-layer fallback)
+  const [studentPhoto, setStudentPhoto] = useState(() => {
+    return candidate.avatar || localStorage.getItem(`cbt_photo_${candidate.id}`) || null;
+  });
 
   useEffect(() => {
     if (candidate.id) {
-      // Load permanent avatar across logins
       const savedPhoto = candidate.avatar || localStorage.getItem(`cbt_photo_${candidate.id}`);
       setStudentPhoto(savedPhoto || null);
 
@@ -56,11 +58,9 @@ export default function StudentDashboard({
       const vault = JSON.parse(localStorage.getItem(`cbt_vault_${candidate.id}`) || '[]');
       setCustomVaultTests(vault);
 
-      // Fetch latest admin configured pricing if available
       const livePricing = JSON.parse(localStorage.getItem('cbt_subscription_pricing') || 'null');
       if (livePricing) setSubscriptionPricing(livePricing);
 
-      // Billing & Purchases History Data
       const billing = JSON.parse(localStorage.getItem(`cbt_billing_${candidate.id}`) || JSON.stringify([
         {
           invoiceId: "INV-2026-001",
@@ -73,7 +73,6 @@ export default function StudentDashboard({
       ]));
       setBillingHistory(billing);
 
-      // Subscription Renewal Reminder (5 days or fewer remaining)
       if (candidate.subscriptionExpiry && currentTier !== 'FREE') {
         const expiryDate = new Date(candidate.subscriptionExpiry);
         const today = new Date();
@@ -92,37 +91,48 @@ export default function StudentDashboard({
     }
   }, [candidate.id, currentTier, candidate.avatar, subscriptionPricing.basicPrice, subscriptionPricing.advancedPrice]);
 
-  // Permanent Profile Picture Upload & Multi-Storage Sync
-  const handlePhotoUpload = async (e) => {
+  // Photo Upload Handler with GLOBAL state propagation
+  const handlePhotoUpload = (e) => {
     const file = e.target.files[0];
     if (file && candidate.id) {
       const reader = new FileReader();
-      reader.onloadend = async () => {
+      reader.onloadend = () => {
         const photoData = reader.result;
         setStudentPhoto(photoData);
 
-        // 1. Roll-ID specific cache
+        // 1. Roll-ID specific persistent storage
         localStorage.setItem(`cbt_photo_${candidate.id}`, photoData);
 
-        // 2. Active candidate session object persistence
-        const updatedCandidate = { ...candidate, avatar: photoData };
+        // 2. Updated candidate object with embedded avatar
+        const updatedCandidate = { 
+          ...candidate, 
+          avatar: photoData,
+          photo: photoData 
+        };
+
+        // 3. Update global App.jsx state immediately
+        if (onUpdateStudentProfile) {
+          onUpdateStudentProfile(updatedCandidate);
+        }
+
+        // 4. Update persistent active student in localStorage
         localStorage.setItem('cbt_active_student', JSON.stringify(updatedCandidate));
 
-        // 3. Global registered students ledger persistence
+        // 5. Update global registered students ledger
         const allStudents = JSON.parse(localStorage.getItem('cbt_students') || '[]');
-        const updatedRoster = allStudents.map(s => s.id === candidate.id ? { ...s, avatar: photoData } : s);
+        const updatedRoster = allStudents.map(s => 
+          (s.id === candidate.id || s.email === candidate.email) 
+            ? { ...s, avatar: photoData, photo: photoData } 
+            : s
+        );
         localStorage.setItem('cbt_students', JSON.stringify(updatedRoster));
 
-        // 4. Remote Cloud Backend sync
-        try {
-          await fetch(`${API_BASE_URL}/api/students/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updatedCandidate),
-          });
-        } catch (err) {
-          console.warn("Backend photo persistence offline fallback:", err);
-        }
+        // 6. Backend background sync (non-blocking)
+        fetch(`${API_BASE_URL}/api/students/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedCandidate),
+        }).catch(err => console.warn("Background photo sync offline:", err));
       };
       reader.readAsDataURL(file);
     }
