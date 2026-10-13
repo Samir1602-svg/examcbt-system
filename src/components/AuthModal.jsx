@@ -6,12 +6,41 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
   const [roleTab, setRoleTab] = useState('candidate');
   const [isExistingUser, setIsExistingUser] = useState(false);
   
+  // Registration & Login Fields
   const [candidateName, setCandidateName] = useState('');
-  const [candidateRoll, setCandidateRoll] = useState('');
+  const [candidateEmail, setCandidateEmail] = useState('');
+  const [candidatePhone, setCandidatePhone] = useState('');
+  const [candidatePassword, setCandidatePassword] = useState('');
   
+  // Login specific identifier (Email OR Phone) & Password
+  const [loginIdentifier, setLoginIdentifier] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+
+  // Admin fields
   const [adminUsername, setAdminUsername] = useState('');
   const [adminKey, setAdminKey] = useState('');
+  
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Password Strength Evaluator Logic
+  const evaluatePasswordStrength = (pwd) => {
+    if (!pwd) return { label: 'None', color: 'bg-slate-800', score: 0 };
+    let score = 0;
+    if (pwd.length >= 8) score += 1;
+    if (/[A-Z]/.test(pwd)) score += 1;
+    if (/[0-9]/.test(pwd)) score += 1;
+    if (/[^A-Za-z0-9]/.test(pwd)) score += 1;
+
+    if (score <= 2 || pwd.length < 8) {
+      return { label: 'Weak', color: 'bg-rose-500', score: 1 };
+    } else if (score === 3) {
+      return { label: 'Medium', color: 'bg-amber-500', score: 2 };
+    } else {
+      return { label: 'Strong', color: 'bg-emerald-500', score: 3 };
+    }
+  };
+
+  const pwdStrength = evaluatePasswordStrength(candidatePassword);
 
   const handleCandidateSubmit = async (e) => {
     e.preventDefault();
@@ -20,40 +49,49 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
     const savedStudents = JSON.parse(localStorage.getItem('cbt_students') || '[]');
 
     if (isExistingUser) {
-      if (!candidateRoll.trim()) {
-        setErrorMsg("Kripya apna Roll Number (e.g. CBT-2026-XXXX) enter karein!");
+      // Login Flexibility: Email OR Phone + Password
+      if (!loginIdentifier.trim() || !loginPassword.trim()) {
+        setErrorMsg("Please enter your registered Email/Phone and Password.");
         return;
       }
 
-      const cleanRoll = candidateRoll.trim().toUpperCase();
-      const existing = savedStudents.find(s => s.id.toUpperCase() === cleanRoll);
+      const cleanInput = loginIdentifier.trim().toLowerCase();
+      const existing = savedStudents.find(s => 
+        (s.email && s.email.toLowerCase() === cleanInput) || 
+        (s.phone && s.phone === cleanInput) ||
+        (s.id && s.id.toLowerCase() === cleanInput)
+      );
 
       if (existing) {
+        if (existing.password && existing.password !== loginPassword) {
+          setErrorMsg("Authentication Failed: Incorrect password entered.");
+          return;
+        }
         onStudentLogin(existing);
       } else {
-        // Fallback create session if valid pattern
-        const restored = {
-          id: cleanRoll,
-          name: "Aspirant " + cleanRoll.slice(-4),
-          email: `${cleanRoll.toLowerCase()}@assessment.gov.in`,
-          createdAt: new Date().toLocaleDateString('en-IN')
-        };
-        onStudentLogin(restored);
+        setErrorMsg("No candidate account found matching this Email, Phone, or Roll ID.");
       }
     } else {
-      if (!candidateName.trim()) {
-        setErrorMsg("Kripya Candidate ka poora naam enter karein!");
+      // Registration: Require both Email & Phone, and Strict Password Strength Gate
+      if (!candidateName.trim() || !candidateEmail.trim() || !candidatePhone.trim() || !candidatePassword) {
+        setErrorMsg("All registration fields including Email, Phone and Password are mandatory.");
         return;
       }
 
-      const generatedRoll = candidateRoll.trim() 
-        ? candidateRoll.trim().toUpperCase() 
-        : `CBT-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+      if (pwdStrength.label === 'Weak') {
+        setErrorMsg("Weak Password Rejected: Please create a Medium or Strong password adhering to security guidelines.");
+        return;
+      }
+
+      const generatedRoll = `CBT-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
       
       const newStudent = {
         id: generatedRoll,
         name: candidateName.trim(),
-        email: `${candidateName.trim().toLowerCase().replace(/\s+/g, '.')}.${Math.floor(100 + Math.random() * 900)}@assessment.gov.in`,
+        email: candidateEmail.trim(),
+        phone: candidatePhone.trim(),
+        password: candidatePassword,
+        tier: "FREE",
         createdAt: new Date().toLocaleDateString('en-IN')
       };
 
@@ -61,7 +99,7 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
       savedStudents.unshift(newStudent);
       localStorage.setItem('cbt_students', JSON.stringify(savedStudents));
 
-      // 2. Central Backend Sync (Taaki Admin Panel mein turant count badhe)
+      // 2. Central Backend Sync
       try {
         await fetch(`${API_BASE_URL}/api/students/register`, {
           method: 'POST',
@@ -97,16 +135,18 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
 
         <div className="flex bg-slate-950 p-1.5 rounded-2xl border border-slate-800 mb-6">
           <button
+            type="button"
             onClick={() => { setRoleTab('candidate'); setErrorMsg(''); }}
             className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${roleTab === 'candidate' ? 'bg-emerald-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:text-white'}`}
           >
-            🎓 Candidate Desk
+            🎓 Candidate Portal
           </button>
           <button
+            type="button"
             onClick={() => { setRoleTab('admin'); setErrorMsg(''); }}
             className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${roleTab === 'admin' ? 'bg-amber-500 text-slate-950 font-black shadow-md' : 'text-slate-400 hover:text-white'}`}
           >
-            🛡️ Assessment Director
+            🛡️ Directorate Console
           </button>
         </div>
 
@@ -124,31 +164,43 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
                 onClick={() => { setIsExistingUser(false); setErrorMsg(''); }}
                 className={`pb-1 ${!isExistingUser ? 'text-emerald-400 border-b-2 border-emerald-400 font-bold' : 'text-slate-500 hover:text-slate-300'}`}
               >
-                + New Registration
+                + New Candidate Registration
               </button>
               <button
                 type="button"
                 onClick={() => { setIsExistingUser(true); setErrorMsg(''); }}
                 className={`pb-1 ${isExistingUser ? 'text-emerald-400 border-b-2 border-emerald-400 font-bold' : 'text-slate-500 hover:text-slate-300'}`}
               >
-                🔑 Login with Roll No.
+                🔑 Candidate Login
               </button>
             </div>
 
-            <form onSubmit={handleCandidateSubmit} className="space-y-4">
+            <form onSubmit={handleCandidateSubmit} className="space-y-3">
               {isExistingUser ? (
-                <div>
-                  <label className="text-xs font-bold text-slate-300 block mb-1">Your Registered Roll Number *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. CBT-2026-123456"
-                    value={candidateRoll}
-                    onChange={(e) => setCandidateRoll(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white uppercase font-mono outline-none focus:border-emerald-500"
-                  />
-                  <p className="text-[10px] text-slate-500 mt-1">Purana Roll Number enter karein past results aur records ke liye.</p>
-                </div>
+                <>
+                  <div>
+                    <label className="text-xs font-bold text-slate-300 block mb-1">Email Address OR Phone Number *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Enter registered email or phone"
+                      value={loginIdentifier}
+                      onChange={(e) => setLoginIdentifier(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-300 block mb-1">Password *</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Enter your password"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </>
               ) : (
                 <>
                   <div>
@@ -159,27 +211,76 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
                       placeholder="Enter Official Candidate Name"
                       value={candidateName}
                       onChange={(e) => setCandidateName(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white outline-none focus:border-emerald-500"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-slate-300 block mb-1">Custom Roll Number (Optional)</label>
+                    <label className="text-xs font-bold text-slate-300 block mb-1">Email Address (Mandatory) *</label>
                     <input
-                      type="text"
-                      placeholder="Leave blank for auto-generated Roll No."
-                      value={candidateRoll}
-                      onChange={(e) => setCandidateRoll(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white uppercase font-mono outline-none focus:border-emerald-500"
+                      type="email"
+                      required
+                      placeholder="aspirant@domain.com"
+                      value={candidateEmail}
+                      onChange={(e) => setCandidateEmail(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
                     />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-300 block mb-1">Phone Number (Mandatory) *</label>
+                    <input
+                      type="tel"
+                      required
+                      placeholder="10-digit mobile number"
+                      value={candidatePhone}
+                      onChange={(e) => setCandidatePhone(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-300 block mb-1">Secure Password *</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Create secure password"
+                      value={candidatePassword}
+                      onChange={(e) => setCandidatePassword(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                    />
+                    
+                    {/* Password Strength Meter & Guidelines */}
+                    <div className="mt-2 space-y-1">
+                      <div className="flex justify-between items-center text-[10px]">
+                        <span className="text-slate-400">Password Strength:</span>
+                        <span className={`font-bold uppercase ${
+                          pwdStrength.label === 'Strong' ? 'text-emerald-400' :
+                          pwdStrength.label === 'Medium' ? 'text-amber-400' : 'text-rose-400'
+                        }`}>
+                          {pwdStrength.label}
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden flex gap-1">
+                        <div className={`h-full flex-1 transition-all ${pwdStrength.score >= 1 ? pwdStrength.color : 'bg-slate-800'}`}></div>
+                        <div className={`h-full flex-1 transition-all ${pwdStrength.score >= 2 ? pwdStrength.color : 'bg-slate-800'}`}></div>
+                        <div className={`h-full flex-1 transition-all ${pwdStrength.score >= 3 ? pwdStrength.color : 'bg-slate-800'}`}></div>
+                      </div>
+                      <p className="text-[10px] text-slate-500 leading-tight pt-1">
+                        Guidelines: Minimum 8 characters, include uppercase letters, numbers & special symbols. (Weak passwords are strictly rejected).
+                      </p>
+                    </div>
                   </div>
                 </>
               )}
 
               <button
                 type="submit"
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-xl text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-emerald-500/10 active:scale-95 transition"
+                disabled={!isExistingUser && pwdStrength.label === 'Weak'}
+                className={`w-full font-black py-3 rounded-xl text-xs sm:text-sm uppercase tracking-wider transition shadow-lg ${
+                  !isExistingUser && pwdStrength.label === 'Weak' 
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed shadow-none' 
+                    : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/10 active:scale-95'
+                }`}
               >
-                {isExistingUser ? 'Login & Load My Records →' : 'Register & Enter Examination Room →'}
+                {isExistingUser ? 'Login & Access Examination Room →' : 'Complete Registration & Enter →'}
               </button>
             </form>
           </div>
