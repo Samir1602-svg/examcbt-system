@@ -45,17 +45,35 @@ def delete_live_test(test_id: str):
     LIVE_TESTS_STORE = [t for t in LIVE_TESTS_STORE if t.get("id") != test_id]
     return {"status": "success"}
 
-# ----------------- STUDENT ROSTER APIS -----------------
+# ----------------- STUDENT ROSTER & TIER APIS -----------------
 @app.get("/api/students")
 def get_all_students():
     return {"status": "success", "students": REGISTERED_STUDENTS_STORE}
 
 @app.post("/api/students/register")
 def register_student(student: dict):
+    # Default tier set to FREE if not provided
+    if "tier" not in student:
+        student["tier"] = "FREE"
+    
     existing = next((s for s in REGISTERED_STUDENTS_STORE if s.get("id") == student.get("id")), None)
     if not existing:
         REGISTERED_STUDENTS_STORE.insert(0, student)
+    else:
+        # Update existing record if needed
+        idx = REGISTERED_STUDENTS_STORE.index(existing)
+        REGISTERED_STUDENTS_STORE[idx].update(student)
     return {"status": "success", "students": REGISTERED_STUDENTS_STORE}
+
+@app.post("/api/students/update-tier")
+def update_student_tier(data: dict):
+    student_id = data.get("id")
+    new_tier = data.get("tier") # FREE, PREMIUM_50, PRO_150
+    for student in REGISTERED_STUDENTS_STORE:
+        if student.get("id") == student_id:
+            student["tier"] = new_tier
+            return {"status": "success", "message": f"Tier successfully updated to {new_tier}"}
+    return {"status": "error", "message": "Student not found"}
 
 # ----------------- PDF CONVERTER -----------------
 @app.post("/api/convert-pdf-to-cbt")
