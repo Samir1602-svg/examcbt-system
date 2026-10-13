@@ -47,7 +47,13 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [currentStudent, setCurrentStudent] = useState(() => {
     const saved = localStorage.getItem('cbt_active_student');
-    return saved ? JSON.parse(saved) : null;
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Auto-attach photo if present in storage
+      const rollPhoto = localStorage.getItem(`cbt_photo_${parsed.id}`);
+      return { ...parsed, avatar: parsed.avatar || rollPhoto || null };
+    }
+    return null;
   });
 
   const [mockTests, setMockTests] = useState(() => {
@@ -74,11 +80,24 @@ export default function App() {
     fetchCentralCloudTests();
   }, []);
 
+  // Safe login handler that ALWAYS preserves the uploaded photo
   const handleStudentLoginSuccess = (studentObj) => {
-    setCurrentStudent(studentObj);
-    localStorage.setItem('cbt_active_student', JSON.stringify(studentObj));
+    const storedPhoto = localStorage.getItem(`cbt_photo_${studentObj.id}`);
+    const resolvedStudent = {
+      ...studentObj,
+      avatar: studentObj.avatar || storedPhoto || null
+    };
+
+    setCurrentStudent(resolvedStudent);
+    localStorage.setItem('cbt_active_student', JSON.stringify(resolvedStudent));
     setIsAuthModalOpen(false);
     setCurrentScreen('student_dashboard');
+  };
+
+  // Called whenever candidate changes photo in dashboard
+  const handleUpdateStudentProfile = (updatedStudent) => {
+    setCurrentStudent(updatedStudent);
+    localStorage.setItem('cbt_active_student', JSON.stringify(updatedStudent));
   };
 
   const handleAdminLoginSuccess = () => {
@@ -128,7 +147,7 @@ export default function App() {
     }
   };
 
-  // Launch sandbox mode immediately without login
+  // Sandbox demo launcher
   const handleLaunchSandboxDemo = (demoExam) => {
     const sandboxQuestions = (mockTests && mockTests.length > 0 && mockTests[0].questions)
       ? mockTests[0].questions
@@ -146,7 +165,8 @@ export default function App() {
       id: "SANDBOX-VISITOR",
       name: "Trial Candidate",
       email: "sandbox@examcbt.demo",
-      tier: "FREE"
+      tier: "FREE",
+      avatar: null
     });
     setCurrentScreen('exam');
   };
@@ -200,6 +220,7 @@ export default function App() {
         <StudentDashboard
           currentStudent={currentStudent}
           onStudentLogin={handleStudentLoginSuccess}
+          onUpdateStudentProfile={handleUpdateStudentProfile}
           onLogout={handleStudentLogout}
           mockTests={mockTests}
           onStartMock={(test) => {
