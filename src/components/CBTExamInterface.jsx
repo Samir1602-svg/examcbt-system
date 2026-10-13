@@ -9,9 +9,28 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
   const [timeLeft, setTimeLeft] = useState((testData?.duration_mins || 60) * 60);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
 
-  // Strictly fetch photo for this candidate's Roll ID only
+  // Multi-tier foolproof Photo Resolver
   const candidateRoll = studentData?.id || 'CBT-2026-0000';
-  const candidatePhoto = studentData?.photo || localStorage.getItem(`cbt_photo_${candidateRoll}`);
+  const [candidatePhoto, setCandidatePhoto] = useState(() => {
+    return (
+      studentData?.avatar ||
+      studentData?.photo ||
+      localStorage.getItem(`cbt_photo_${candidateRoll}`) ||
+      JSON.parse(localStorage.getItem('cbt_active_student') || '{}')?.avatar ||
+      null
+    );
+  });
+
+  useEffect(() => {
+    const resolved =
+      studentData?.avatar ||
+      studentData?.photo ||
+      localStorage.getItem(`cbt_photo_${candidateRoll}`) ||
+      JSON.parse(localStorage.getItem('cbt_active_student') || '{}')?.avatar;
+    if (resolved) {
+      setCandidatePhoto(resolved);
+    }
+  }, [studentData, candidateRoll]);
 
   // Countdown Timer
   useEffect(() => {
@@ -299,12 +318,18 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
             </div>
           </div>
 
-          <div className="pt-4 mt-2 border-t border-slate-200">
+          <div className="pt-4 mt-2 border-t border-slate-200 space-y-2">
             <button
               onClick={() => setShowSubmitModal(true)}
-              className="w-full bg-[#007bff] hover:bg-[#0069d9] text-white font-black py-3 rounded-lg text-xs sm:text-sm uppercase tracking-wider shadow-md active:scale-95 transition"
+              className="w-full bg-[#007bff] hover:bg-[#0069d9] text-white font-black py-2.5 rounded-lg text-xs sm:text-sm uppercase tracking-wider shadow-md active:scale-95 transition"
             >
               Submit Examination
+            </button>
+            <button
+              onClick={onExitExam}
+              className="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2 rounded-lg text-xs transition"
+            >
+              Exit Exam Hall
             </button>
           </div>
         </div>
