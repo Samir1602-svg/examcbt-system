@@ -11,7 +11,12 @@ export default function StudentDashboard({
 }) {
   const [activeTab, setActiveTab] = useState('available_tests');
   const [pastResults, setPastResults] = useState([]);
-  const [upgradeModalTier, setUpgradeModalTier] = useState(null);
+  
+  // Pro Custom Vault States
+  const [customVaultTests, setCustomVaultTests] = useState([]);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [isParsing, setIsParsing] = useState(false);
+  const [parseError, setParseError] = useState('');
 
   const candidate = currentStudent || {
     id: "CBT-2026-894102",
@@ -22,7 +27,7 @@ export default function StudentDashboard({
 
   const currentTier = candidate.tier || "FREE";
 
-  // Roll-specific photo management
+  // Roll-specific photo and vault management
   const [studentPhoto, setStudentPhoto] = useState(null);
 
   useEffect(() => {
@@ -32,6 +37,9 @@ export default function StudentDashboard({
 
       const history = JSON.parse(localStorage.getItem(`cbt_results_${candidate.id}`) || '[]');
       setPastResults(history);
+
+      const vault = JSON.parse(localStorage.getItem(`cbt_vault_${candidate.id}`) || '[]');
+      setCustomVaultTests(vault);
     }
   }, [candidate.id]);
 
@@ -48,9 +56,54 @@ export default function StudentDashboard({
     }
   };
 
-  // Freemium filter: Free users get access to up to 10 sample mock tests
-  const accessibleTests = currentTier === "FREE" ? mockTests.slice(0, 10) : mockTests;
-  const lockedTestsCount = currentTier === "FREE" ? Math.max(0, mockTests.length - 10) : 0;
+  // Handle Pro Custom File Upload & Parsing via Backend API
+  const handleCustomFileUpload = async (e) => {
+    e.preventDefault();
+    if (!selectedFile) return;
+
+    setIsParsing(true);
+    setParseError('');
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    try {
+      const response = await fetch('http://localhost:8000/api/convert-pdf-to-cbt', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await response.json();
+
+      if (data.status === 'success' && data.data?.questions?.length > 0) {
+        const newCustomTest = {
+          id: `vault-${Date.now()}`,
+          title: `Custom Vault: ${selectedFile.name.replace(/\.[^/.]+$/, "")}`,
+          duration_mins: 60,
+          questions: data.data.questions
+        };
+
+        const updatedVault = [newCustomTest, ...customVaultTests];
+        setCustomVaultTests(updatedVault);
+        localStorage.setItem(`cbt_vault_${candidate.id}`, JSON.stringify(updatedVault));
+        setSelectedFile(null);
+        alert("Custom question paper successfully parsed and stored in your personal vault!");
+      } else {
+        setParseError('Failed to parse questions from the uploaded file. Please ensure valid PDF format.');
+      }
+    } catch (err) {
+      console.error(err);
+      setParseError('Server connection error during parsing. Ensure backend is running.');
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  // Helper to simulate Pro Tier activation for testing
+  const handleSimulateProUpgrade = () => {
+    candidate.tier = "PRO_150";
+    if (onStudentLogin) onStudentLogin(candidate);
+    alert("Simulated Pro Tier (₹150/month) activated successfully for testing!");
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 sm:p-8 font-sans selection:bg-emerald-500 selection:text-slate-950">
@@ -115,11 +168,11 @@ export default function StudentDashboard({
             </div>
 
             <div className="space-y-1.5">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[9px] uppercase font-black tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full inline-block">
                   Verified Candidate
                 </span>
-                <span className="text-[9px] uppercase font-black tracking-widest bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full inline-block">
+                <span className="text-[9px] uppercase font-black tracking-widest bg-purple-500/10 text-purple-400 border border-purple-500/30 px-2 py-0.5 rounded-full inline-block">
                   Plan: {currentTier}
                 </span>
               </div>
@@ -133,12 +186,21 @@ export default function StudentDashboard({
               <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 block">Candidate Roll ID</span>
               <span className="text-lg sm:text-xl font-mono font-black text-emerald-400 mt-0.5 block">{candidate.id}</span>
             </div>
-            <button 
-              onClick={() => setActiveTab('subscription_plans')}
-              className="mt-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[11px] font-bold py-1.5 px-3 rounded-xl transition"
-            >
-              View Subscription Tiers ⚡
-            </button>
+            <div className="flex gap-2 mt-3 justify-end flex-wrap">
+              <button 
+                onClick={handleSimulateProUpgrade}
+                className="bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 text-[10px] font-bold py-1 px-2.5 rounded-xl transition"
+                title="Test Pro Tier without payment gateway"
+              >
+                ⚡ Simulate Pro Tier
+              </button>
+              <button 
+                onClick={() => setActiveTab('subscription_plans')}
+                className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px] font-bold py-1 px-2.5 rounded-xl transition"
+              >
+                View Tiers
+              </button>
+            </div>
           </div>
         </div>
 
@@ -149,6 +211,12 @@ export default function StudentDashboard({
             className={`text-xs font-bold pb-2 border-b-2 transition whitespace-nowrap ${activeTab === 'available_tests' ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-slate-400 hover:text-white'}`}
           >
             Available Examination Series ({mockTests.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('custom_vault')}
+            className={`text-xs font-bold pb-2 border-b-2 transition whitespace-nowrap ${activeTab === 'custom_vault' ? 'border-purple-400 text-purple-400' : 'border-transparent text-slate-400 hover:text-white'}`}
+          >
+            Pro Custom Vault (Upload) ✨
           </button>
           <button
             onClick={() => setActiveTab('subscription_plans')}
@@ -164,13 +232,13 @@ export default function StudentDashboard({
           </button>
         </div>
 
-        {/* TAB 1: Available Tests (Freemium Enforced) */}
+        {/* TAB 1: Available Tests */}
         {activeTab === 'available_tests' && (
           <div className="space-y-4">
             {currentTier === "FREE" && mockTests.length > 10 && (
               <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3">
                 <p className="text-xs text-amber-300">
-                  ⚠️ <strong>Free Tier Active:</strong> You have access to 10 sample mock examinations. Upgrade to Basic Premium (₹50/month) to unlock all scheduled sets.
+                  ⚠️ <strong>Free Tier Active:</strong> You have access to 10 sample mock examinations. Upgrade to unlock all scheduled sets.
                 </p>
                 <button
                   onClick={() => setActiveTab('subscription_plans')}
@@ -201,7 +269,7 @@ export default function StudentDashboard({
                           </span>
                           {isLocked && (
                             <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                              🔒 Locked (Premium Required)
+                              🔒 Locked
                             </span>
                           )}
                         </div>
@@ -218,7 +286,7 @@ export default function StudentDashboard({
                           onClick={() => setActiveTab('subscription_plans')}
                           className="w-full bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold py-3 rounded-2xl text-xs sm:text-sm uppercase tracking-wider transition"
                         >
-                          Unlock Full Access (₹50 / Month) →
+                          Unlock Full Access →
                         </button>
                       ) : (
                         <button
@@ -236,7 +304,103 @@ export default function StudentDashboard({
           </div>
         )}
 
-        {/* TAB 2: Subscription Tiers & Pricing (3-Section Matrix View) */}
+        {/* TAB 2: Pro Custom Vault (Upload & Parser) */}
+        {activeTab === 'custom_vault' && (
+          <div className="space-y-6">
+            {currentTier !== 'PRO_150' ? (
+              <div className="bg-purple-500/10 border border-purple-500/30 rounded-3xl p-8 text-center space-y-4">
+                <div className="w-12 h-12 bg-purple-500/20 text-purple-400 rounded-2xl mx-auto flex items-center justify-center text-xl font-black">
+                  🔒
+                </div>
+                <div className="max-w-md mx-auto space-y-2">
+                  <h3 className="text-lg font-black text-white">Pro Vault Feature Locked</h3>
+                  <p className="text-xs text-slate-300">
+                    Custom question paper upload aur AI parsing ke liye <strong>Pro Tier (₹150/Month)</strong> active hona chahiye. Aap upar <em>"⚡ Simulate Pro Tier"</em> button daba kar ise turant test kar sakte hain!
+                  </p>
+                </div>
+                <button
+                  onClick={handleSimulateProUpgrade}
+                  className="bg-purple-600 hover:bg-purple-500 text-white font-black py-2.5 px-6 rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-purple-500/20"
+                >
+                  Activate Pro Mode for Testing Now →
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Upload Card */}
+                <div className="bg-slate-900 border border-purple-500/30 p-6 rounded-3xl space-y-4 shadow-xl">
+                  <div>
+                    <span className="text-[10px] font-mono font-bold text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 rounded">
+                      Pro Custom Upload Engine
+                    </span>
+                    <h3 className="text-lg font-black text-white mt-2">Upload Custom Exam Set (PDF / JSON)</h3>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Apni question paper PDF upload karein. Platform AI parser ke zariye use automatic CBT format me convert karke aapke personal vault me save kar dega.
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleCustomFileUpload} className="space-y-4">
+                    <div className="border-2 border-dashed border-slate-700 hover:border-purple-500/50 p-6 rounded-2xl text-center bg-slate-950/50 transition">
+                      <input 
+                        type="file" 
+                        accept=".pdf,.json"
+                        onChange={(e) => setSelectedFile(e.target.files[0])}
+                        className="text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-purple-500 file:text-slate-950 hover:file:bg-purple-400 cursor-pointer"
+                      />
+                      {selectedFile && (
+                        <p className="text-xs text-emerald-400 mt-2 font-mono">Selected: {selectedFile.name}</p>
+                      )}
+                    </div>
+
+                    {parseError && (
+                      <p className="text-xs text-rose-400 bg-rose-500/10 p-3 rounded-xl border border-rose-500/20">{parseError}</p>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={!selectedFile || isParsing}
+                      className="w-full bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-black py-3 rounded-2xl text-xs uppercase tracking-wider shadow-lg shadow-purple-500/20 transition"
+                    >
+                      {isParsing ? 'Parsing PDF & Structuring CBT Questions...' : 'Upload & Parse into CBT Format 🚀'}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Vault Tests List */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Your Personal Upload Vault ({customVaultTests.length})</h4>
+                  {customVaultTests.length === 0 ? (
+                    <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-8 text-center text-slate-500 text-xs">
+                      Aapke vault me abhi koi custom uploaded exam nahi hai. Upar PDF upload karke pehla test create karein.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {customVaultTests.map((vaultTest) => (
+                        <div key={vaultTest.id} className="bg-slate-900 border border-slate-800 p-5 rounded-3xl flex flex-col justify-between space-y-4">
+                          <div>
+                            <span className="text-[10px] font-mono font-bold text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                              Personal Vault Test
+                            </span>
+                            <h3 className="font-bold text-base text-white mt-2">{vaultTest.title}</h3>
+                            <p className="text-xs text-slate-400 mt-1">📝 {vaultTest.questions?.length || 0} Parsed Questions</p>
+                          </div>
+                          <button
+                            onClick={() => onStartMock(vaultTest)}
+                            className="w-full bg-purple-600 hover:bg-purple-500 text-white font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition"
+                          >
+                            Launch Custom CBT Exam →
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: Subscription Tiers & Pricing */}
         {activeTab === 'subscription_plans' && (
           <div className="space-y-6">
             <div className="text-center max-w-2xl mx-auto space-y-2">
@@ -249,7 +413,7 @@ export default function StudentDashboard({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
               
               {/* Tier 1: Free Tier */}
-              <div className={`bg-slate-900 border rounded-3xl p-6 flex flex-col justify-between space-y-6 ${currentTier === 'FREE' ? 'border-emerald-500 shadow-lg shadow-emerald-500/5' : 'border-slate-800'}`}>
+              <div className={`bg-slate-900 border rounded-3xl p-6 flex flex-col justify-between space-y-6 ${currentTier === 'FREE' ? 'border-emerald-500 shadow-lg' : 'border-slate-800'}`}>
                 <div className="space-y-4">
                   <div>
                     <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-800 px-2.5 py-1 rounded-full">
@@ -262,27 +426,22 @@ export default function StudentDashboard({
                     <li className="flex items-center gap-2">✓ Access to exactly 10 sample mock exam papers</li>
                     <li className="flex items-center gap-2">✓ Real TCS iON simulation engine & UI</li>
                     <li className="flex items-center gap-2">✓ Instant result & accuracy check</li>
-                    <li className="text-slate-500 flex items-center gap-2">✕ Full 6-month scheduled question repository</li>
-                    <li className="text-slate-500 flex items-center gap-2">✕ Custom PDF/JSON exam parser vault</li>
                   </ul>
                 </div>
                 <button 
-                  disabled={currentTier === 'FREE'}
-                  className="w-full bg-slate-800 text-slate-400 font-bold py-3 rounded-2xl text-xs cursor-not-allowed"
+                  onClick={() => { candidate.tier = "FREE"; if(onStudentLogin) onStudentLogin(candidate); alert("Switched to Free Tier"); }}
+                  className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-2xl text-xs"
                 >
-                  {currentTier === 'FREE' ? 'Active Plan' : 'Free Tier'}
+                  {currentTier === 'FREE' ? 'Active Plan' : 'Select Free'}
                 </button>
               </div>
 
               {/* Tier 2: Basic Premium Tier (₹50 / Month) */}
-              <div className={`bg-slate-900 border rounded-3xl p-6 flex flex-col justify-between space-y-6 relative overflow-hidden ${currentTier === 'PREMIUM_50' ? 'border-emerald-500 shadow-lg shadow-emerald-500/10' : 'border-amber-500/50'}`}>
-                <div className="absolute top-0 right-0 bg-amber-500 text-slate-950 text-[9px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-wider">
-                  Most Popular
-                </div>
+              <div className={`bg-slate-900 border rounded-3xl p-6 flex flex-col justify-between space-y-6 ${currentTier === 'PREMIUM_50' ? 'border-emerald-500 shadow-lg' : 'border-amber-500/50'}`}>
                 <div className="space-y-4">
                   <div>
                     <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-full">
-                      RECOMMENDED FOR ASPIRANTS
+                      RECOMMENDED
                     </span>
                     <h3 className="text-lg font-black text-white mt-3">Basic Premium Tier</h3>
                     <p className="text-2xl font-black text-amber-400 mt-1">₹50 <span className="text-xs font-normal text-slate-400">/ month</span></p>
@@ -291,20 +450,18 @@ export default function StudentDashboard({
                     <li className="flex items-center gap-2">✓ Full access to all scheduled examination sets</li>
                     <li className="flex items-center gap-2">✓ Entire active 6-month exam repository</li>
                     <li className="flex items-center gap-2">✓ Complete detailed solutions & analytics</li>
-                    <li className="flex items-center gap-2">✓ Priority server response time</li>
-                    <li className="text-slate-500 flex items-center gap-2">✕ Custom question paper parser vault</li>
                   </ul>
                 </div>
                 <button 
-                  onClick={() => alert("Redirecting to Secure Payment Gateway for Basic Premium (₹50/month)...")}
-                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider shadow-lg shadow-amber-500/10 transition"
+                  onClick={() => { candidate.tier = "PREMIUM_50"; if(onStudentLogin) onStudentLogin(candidate); alert("Basic Premium (₹50) Activated!"); }}
+                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider transition"
                 >
-                  Activate Basic Premium (₹50) →
+                  {currentTier === 'PREMIUM_50' ? 'Active Plan' : 'Activate Basic (₹50)'}
                 </button>
               </div>
 
               {/* Tier 3: Pro Tier with Custom Upload Engine (₹150 / Month) */}
-              <div className={`bg-slate-900 border rounded-3xl p-6 flex flex-col justify-between space-y-6 ${currentTier === 'PRO_150' ? 'border-emerald-500 shadow-lg shadow-emerald-500/10' : 'border-slate-800'}`}>
+              <div className={`bg-slate-900 border rounded-3xl p-6 flex flex-col justify-between space-y-6 ${currentTier === 'PRO_150' ? 'border-emerald-500 shadow-lg' : 'border-purple-500/50'}`}>
                 <div className="space-y-4">
                   <div>
                     <span className="text-[10px] font-mono font-bold text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2.5 py-1 rounded-full">
@@ -314,18 +471,17 @@ export default function StudentDashboard({
                     <p className="text-2xl font-black text-purple-400 mt-1">₹150 <span className="text-xs font-normal text-slate-400">/ month</span></p>
                   </div>
                   <ul className="space-y-2 text-xs text-slate-300">
-                    <li className="flex items-center gap-2">✓ Everything included in Basic Premium Tier</li>
-                    <li className="flex items-center gap-2">✓ Dedicated Pro subscription upload engine</li>
+                    <li className="flex items-center gap-2">✓ Everything in Basic Premium Tier</li>
                     <li className="flex items-center gap-2">✓ Upload custom exam sets via PDF or JSON</li>
                     <li className="flex items-center gap-2">✓ Automated AI parsing into CBT format</li>
                     <li className="flex items-center gap-2">✓ Personal candidate vault storage</li>
                   </ul>
                 </div>
                 <button 
-                  onClick={() => alert("Redirecting to Secure Payment Gateway for Pro Tier (₹150/month)...")}
-                  className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:opacity-90 text-white font-black py-3 rounded-2xl text-xs uppercase tracking-wider shadow-lg shadow-purple-500/10 transition"
+                  onClick={() => { candidate.tier = "PRO_150"; if(onStudentLogin) onStudentLogin(candidate); alert("Pro Vault (₹150) Activated!"); }}
+                  className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:opacity-90 text-white font-black py-3 rounded-2xl text-xs uppercase tracking-wider transition"
                 >
-                  Upgrade to Pro Vault (₹150) →
+                  {currentTier === 'PRO_150' ? 'Active Plan' : 'Activate Pro Vault (₹150)'}
                 </button>
               </div>
 
@@ -333,19 +489,18 @@ export default function StudentDashboard({
           </div>
         )}
 
-        {/* TAB 3: Past Exam Results */}
+        {/* TAB 4: Past Exam Results */}
         {activeTab === 'past_results' && (
           <div>
             {pastResults.length === 0 ? (
-              <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-12 text-center text-slate-500 text-xs space-y-2">
+              <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-12 text-center text-slate-500 text-xs space-y-2">
                 <span className="text-2xl block">📊</span>
                 <p>Abhi tak aapne koi exam attempt nahi kiya hai.</p>
-                <p className="text-[11px] text-slate-600">Koi test submit karne par aapka score, accuracy aur date yahan permanently record ho jayenge.</p>
               </div>
             ) : (
               <div className="space-y-3">
                 {pastResults.map((rec) => (
-                  <div key={rec.id} className="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:border-slate-700 transition">
+                  <div key={rec.id} className="bg-slate-900 border border-slate-800 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div>
                       <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
                         {rec.date}
@@ -355,14 +510,11 @@ export default function StudentDashboard({
                         <span>Correct: <strong className="text-emerald-400">{rec.correct}</strong></span>
                         <span>Wrong: <strong className="text-rose-400">{rec.wrong}</strong></span>
                         <span>Skipped: <strong className="text-slate-300">{rec.unattempted}</strong></span>
-                        <span>Time: {rec.timeSpentMins}m</span>
                       </div>
                     </div>
-
-                    <div className="bg-slate-950 border border-slate-800 px-4 py-2.5 rounded-xl text-right self-stretch sm:self-auto">
+                    <div className="bg-slate-950 border border-slate-800 px-4 py-2.5 rounded-xl text-right">
                       <span className="text-[10px] text-slate-400 uppercase font-bold block">Final Score</span>
-                      <span className="text-lg sm:text-xl font-black text-emerald-400">{rec.finalScore}</span>
-                      <span className="text-[10px] text-slate-500 ml-1">/ {rec.totalQuestions * 2}</span>
+                      <span className="text-lg font-black text-emerald-400">{rec.finalScore}</span>
                     </div>
                   </div>
                 ))}
@@ -370,6 +522,7 @@ export default function StudentDashboard({
             )}
           </div>
         )}
+
       </div>
     </div>
   );
