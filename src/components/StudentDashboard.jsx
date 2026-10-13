@@ -11,6 +11,8 @@ export default function StudentDashboard({
 }) {
   const [activeTab, setActiveTab] = useState('available_tests');
   const [pastResults, setPastResults] = useState([]);
+  const [billingHistory, setBillingHistory] = useState([]);
+  const [showRenewalBanner, setShowRenewalBanner] = useState(false);
   
   // Custom Vault States for Advanced Tier
   const [customVaultTests, setCustomVaultTests] = useState([]);
@@ -22,13 +24,14 @@ export default function StudentDashboard({
     id: "CBT-2026-894102",
     name: "Verified Aspirant",
     email: "aspirant.official@assessment.gov.in",
-    tier: "FREE" // FREE, BASIC, ADVANCED
+    tier: "FREE", // FREE, BASIC, ADVANCED
+    subscriptionExpiry: "2026-10-18" // Example expiry for reminder check (5 days or less)
   };
 
   const currentTier = candidate.tier || "FREE";
   const isAdvancedPro = currentTier === 'ADVANCED';
 
-  // Roll-specific photo and vault management
+  // Roll-specific photo, vault, and billing management
   const [studentPhoto, setStudentPhoto] = useState(null);
 
   useEffect(() => {
@@ -41,8 +44,38 @@ export default function StudentDashboard({
 
       const vault = JSON.parse(localStorage.getItem(`cbt_vault_${candidate.id}`) || '[]');
       setCustomVaultTests(vault);
+
+      // Mock Billing & Purchases History Data
+      const billing = JSON.parse(localStorage.getItem(`cbt_billing_${candidate.id}`) || JSON.stringify([
+        {
+          invoiceId: "INV-2026-001",
+          tier: currentTier === 'ADVANCED' ? "Advanced Pro Vault (₹150 / Month)" : currentTier === 'BASIC' ? "Standard Premium (₹50 / Month)" : "Free Starter Plan",
+          purchaseDate: "2026-10-11",
+          expiryDate: candidate.subscriptionExpiry || "2026-11-11",
+          status: currentTier === 'FREE' ? "Active (Complimentary)" : "SUCCESS",
+          amountPaid: currentTier === 'ADVANCED' ? "₹150.00" : currentTier === 'BASIC' ? "₹50.00" : "₹0.00"
+        }
+      ]));
+      setBillingHistory(billing);
+
+      // Point 4: Subscription Renewal Reminder (5 days or fewer remaining)
+      if (candidate.subscriptionExpiry && currentTier !== 'FREE') {
+        const expiryDate = new Date(candidate.subscriptionExpiry);
+        const today = new Date();
+        const diffTime = expiryDate - today;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays <= 5) {
+          const lastShown = localStorage.getItem(`cbt_renewal_alert_${candidate.id}`);
+          const todayStr = today.toDateString();
+          if (lastShown !== todayStr) {
+            setShowRenewalBanner(true);
+            localStorage.setItem(`cbt_renewal_alert_${candidate.id}`, todayStr);
+          }
+        }
+      }
     }
-  }, [candidate.id]);
+  }, [candidate.id, currentTier]);
 
   const handlePhotoUpload = (e) => {
     const file = e.target.files[0];
@@ -57,10 +90,16 @@ export default function StudentDashboard({
     }
   };
 
-  // Handle Custom File Upload & Parsing via Backend API
+  // Point 3: Pro Tier Custom Upload Engine & Parser
   const handleCustomFileUpload = async (e) => {
     e.preventDefault();
     if (!selectedFile) return;
+
+    if (!isAdvancedPro) {
+      alert("Custom upload vault is available exclusively for Advanced Pro Vault subscribers.");
+      setActiveTab('subscription_plans');
+      return;
+    }
 
     setIsParsing(true);
     setParseError('');
@@ -105,6 +144,24 @@ export default function StudentDashboard({
     }`}>
       <div className="max-w-6xl mx-auto space-y-6">
         
+        {/* Point 4: Daily Subscription Renewal Reminder Banner */}
+        {showRenewalBanner && (
+          <div className="bg-amber-500 text-slate-950 p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3 shadow-xl animate-bounce">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">⏳</span>
+              <p className="text-xs font-black uppercase tracking-wider">
+                Subscription Notice: Your active examination subscription is expiring soon. Renew now to avoid interruption in mock test access.
+              </p>
+            </div>
+            <button
+              onClick={() => { setShowRenewalBanner(false); setActiveTab('subscription_plans'); }}
+              className="bg-slate-950 text-amber-400 font-black px-4 py-2 rounded-xl text-xs uppercase tracking-wider hover:bg-slate-900 whitespace-nowrap"
+            >
+              Renew Subscription →
+            </button>
+          </div>
+        )}
+
         {/* Top Header Bar */}
         <header className={`flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4 sm:p-5 rounded-3xl shadow-xl border ${
           isAdvancedPro ? 'bg-[#18160e] border-amber-500/30 shadow-amber-950/20' : 'bg-slate-900 border-slate-800'
@@ -247,6 +304,17 @@ export default function StudentDashboard({
           >
             Upgrade Plans & Subscriptions
           </button>
+
+          {/* Point 5: Internal Billing & Purchases Tab */}
+          <button
+            onClick={() => setActiveTab('billing_history')}
+            className={`text-xs font-bold pb-2 border-b-2 transition whitespace-nowrap ${
+              activeTab === 'billing_history' ? (isAdvancedPro ? 'border-amber-400 text-amber-400' : 'border-emerald-400 text-emerald-400') : 'border-transparent text-slate-400 hover:text-white'
+            }`}
+          >
+            Billing & Purchases ({billingHistory.length})
+          </button>
+
           <button
             onClick={() => setActiveTab('past_results')}
             className={`text-xs font-bold pb-2 border-b-2 transition whitespace-nowrap ${
@@ -412,7 +480,7 @@ export default function StudentDashboard({
           </div>
         )}
 
-        {/* TAB 3: Upgrade Plans & Subscriptions (Genuine Tier UI) */}
+        {/* TAB 3: Upgrade Plans & Subscriptions */}
         {activeTab === 'subscription_plans' && (
           <div className="space-y-6">
             <div className="text-center max-w-2xl mx-auto space-y-2">
@@ -507,6 +575,57 @@ export default function StudentDashboard({
               </div>
 
             </div>
+          </div>
+        )}
+
+        {/* TAB 5: Internal Billing & Purchases History (Point 5) */}
+        {activeTab === 'billing_history' && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-base font-black text-white">Billing & Purchases Ledger</h3>
+              <p className={`text-xs ${isAdvancedPro ? 'text-amber-200/70' : 'text-slate-400'}`}>
+                Complete record of your subscription purchases, invoice IDs, transaction statuses, and validity periods.
+              </p>
+            </div>
+
+            {billingHistory.length === 0 ? (
+              <div className={`border rounded-2xl p-12 text-center text-xs ${
+                isAdvancedPro ? 'bg-[#18160e]/40 border-amber-500/20 text-amber-200/60' : 'bg-slate-900/40 border-slate-800 text-slate-500'
+              }`}>
+                No billing or purchase history found.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {billingHistory.map((bill, index) => (
+                  <div key={index} className={`border p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${
+                    isAdvancedPro ? 'bg-[#18160e] border-amber-500/30' : 'bg-slate-900 border-slate-800'
+                  }`}>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono font-bold text-amber-400">{bill.invoiceId}</span>
+                        <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded ${
+                          bill.status.includes('SUCCESS') ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-300'
+                        }`}>
+                          {bill.status}
+                        </span>
+                      </div>
+                      <h4 className="font-bold text-sm text-white">{bill.tier}</h4>
+                      <div className={`text-xs space-x-3 ${isAdvancedPro ? 'text-amber-200/70' : 'text-slate-400'}`}>
+                        <span>Purchased: {bill.purchaseDate}</span>
+                        <span>•</span>
+                        <span>Expires: {bill.expiryDate}</span>
+                      </div>
+                    </div>
+                    <div className={`border px-4 py-3 rounded-xl text-right ${
+                      isAdvancedPro ? 'bg-[#12100a] border-amber-500/30' : 'bg-slate-950 border-slate-800'
+                    }`}>
+                      <span className={`text-[10px] uppercase font-bold block ${isAdvancedPro ? 'text-amber-300/70' : 'text-slate-400'}`}>Amount Paid</span>
+                      <span className={`text-lg font-black ${isAdvancedPro ? 'text-amber-400' : 'text-emerald-400'}`}>{bill.amountPaid}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
