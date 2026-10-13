@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import NewsTicker from './components/NewsTicker';
 import LandingPage from './components/LandingPage';
 import StudentDashboard from './components/StudentDashboard';
 import CBTExamInterface from './components/CBTExamInterface';
@@ -157,6 +158,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 font-sans">
+      {/* Interactive Breaking News Ticker (Point 8) */}
+      <NewsTicker />
+
       {/* 1. Landing Screen */}
       {currentScreen === 'landing' && (
         <LandingPage
