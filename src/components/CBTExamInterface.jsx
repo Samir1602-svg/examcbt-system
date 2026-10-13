@@ -9,28 +9,12 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
   const [timeLeft, setTimeLeft] = useState((testData?.duration_mins || 60) * 60);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
 
-  // Multi-tier Photo Resolver
-  const candidateRoll = studentData?.id || 'CBT-2026-0000';
-  const [candidatePhoto, setCandidatePhoto] = useState(() => {
-    return (
-      studentData?.avatar ||
-      studentData?.photo ||
-      localStorage.getItem(`cbt_photo_${candidateRoll}`) ||
-      JSON.parse(localStorage.getItem('cbt_active_student') || '{}')?.avatar ||
-      null
-    );
-  });
+  // Dynamic Translated Storage to cache Hindi version instantly
+  const [translatedCache, setTranslatedCache] = useState({});
 
-  useEffect(() => {
-    const resolved =
-      studentData?.avatar ||
-      studentData?.photo ||
-      localStorage.getItem(`cbt_photo_${candidateRoll}`) ||
-      JSON.parse(localStorage.getItem('cbt_active_student') || '{}')?.avatar;
-    if (resolved) {
-      setCandidatePhoto(resolved);
-    }
-  }, [studentData, candidateRoll]);
+  // Candidate Photo Lookup
+  const candidateRoll = studentData?.id || 'CBT-2026-0000';
+  const candidatePhoto = studentData?.avatar || studentData?.photo || localStorage.getItem(`cbt_photo_${candidateRoll}`) || null;
 
   // Countdown Timer
   useEffect(() => {
@@ -52,31 +36,53 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
 
   const currentQ = questions[currentIdx] || {};
 
-  // Real-Time Bilingual Question Statement Resolver
-  const activeQuestionText = language === 'Hindi'
-    ? (currentQ.question_hi || currentQ.question_en || currentQ.question || "प्रश्न उपलब्ध नहीं है।")
-    : (currentQ.question_en || currentQ.question_hi || currentQ.question || "Question text not available.");
-
-  // Real-Time Bilingual Options Resolver (Clean labels)
-  const getActiveOptions = () => {
-    const rawOpts = language === 'Hindi'
-      ? (currentQ.options_hi || currentQ.options_en || currentQ.options || [])
-      : (currentQ.options_en || currentQ.options_hi || currentQ.options || []);
-
-    const defaultLabels = ["Option A", "Option B", "Option C", "Option D"];
-
-    return defaultLabels.map((defLabel, idx) => {
-      const val = rawOpts[idx];
-      if (!val || typeof val !== 'string') return defLabel;
-      const trimmed = val.trim();
-      if (/^[1-4]\.?$/.test(trimmed)) {
-        return language === 'Hindi' ? `विकल्प ${trimmed.replace('.', '')}` : `Option ${trimmed.replace('.', '')}`;
+  // Instant Automatic Free Translation when question_hi is missing in parsed JSON
+  useEffect(() => {
+    if (language === 'Hindi' && !currentQ.question_hi && currentQ.question_en) {
+      const cacheKey = `q_${currentIdx}_hi`;
+      if (!translatedCache[cacheKey]) {
+        const textToTranslate = currentQ.question_en || currentQ.question;
+        fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=hi&dt=t&q=${encodeURIComponent(textToTranslate)}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data && data[0]) {
+              const fullTrans = data[0].map(item => item[0]).join('');
+              setTranslatedCache(prev => ({ ...prev, [cacheKey]: fullTrans }));
+            }
+          })
+          .catch(() => {});
       }
-      return trimmed;
-    });
+    }
+  }, [language, currentIdx, currentQ, translatedCache]);
+
+  // Resolve Real-Time Question Statement
+  const getDisplayQuestion = () => {
+    if (language === 'Hindi') {
+      if (currentQ.question_hi && currentQ.question_hi.trim() !== "" && currentQ.question_hi !== currentQ.question_en) {
+        return currentQ.question_hi;
+      }
+      const cacheKey = `q_${currentIdx}_hi`;
+      if (translatedCache[cacheKey]) {
+        return translatedCache[cacheKey];
+      }
+      return currentQ.question_en || currentQ.question || "प्रश्न उपलब्ध नहीं है।";
+    }
+    return currentQ.question_en || currentQ.question || "Question text not available.";
   };
 
-  const optionsList = getActiveOptions();
+  // Resolve Real-Time Options
+  const getDisplayOptions = () => {
+    const rawEn = currentQ.options_en || currentQ.options || ["Option A", "Option B", "Option C", "Option D"];
+    const rawHi = currentQ.options_hi;
+
+    if (language === 'Hindi' && Array.isArray(rawHi) && rawHi.length === rawEn.length) {
+      return rawHi;
+    }
+    return rawEn;
+  };
+
+  const displayQuestionText = getDisplayQuestion();
+  const displayOptions = getDisplayOptions();
 
   const handleSelectOption = (optIdx) => {
     setSelectedAnswers((prev) => ({
@@ -161,7 +167,7 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col font-sans select-none">
       
-      {/* 1. TCS iON Top Navigation Bar */}
+      {/* 1. Header */}
       <header className="bg-[#245d8b] text-white px-3 sm:px-6 py-2.5 flex justify-between items-center shadow-md">
         <div className="flex items-center space-x-2">
           <span className="font-bold text-sm sm:text-base tracking-wide truncate max-w-[180px] sm:max-w-md">
@@ -175,14 +181,13 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
             <span className="font-mono text-sm sm:text-lg font-bold leading-tight">{formatTimer(timeLeft)}</span>
           </div>
 
-          {/* Bilingual Switcher Dropdown */}
+          {/* Bilingual Toggle Dropdown */}
           <div className="flex items-center space-x-1.5 text-xs">
             <span className="hidden sm:inline text-slate-200 font-semibold">View in:</span>
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value)}
-              className="bg-white text-slate-800 rounded px-2.5 py-1 font-bold text-xs outline-none cursor-pointer shadow-sm hover:bg-slate-50 transition"
-              title="Change examination display language"
+              className="bg-white text-slate-800 rounded px-2 py-1 font-bold text-xs outline-none cursor-pointer shadow-sm"
             >
               <option value="English">English</option>
               <option value="Hindi">हिन्दी (Hindi)</option>
@@ -206,25 +211,25 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
               </span>
             </div>
 
-            {/* Dynamic Bilingual Question Statement */}
+            {/* Question Text */}
             <div className="text-sm sm:text-base font-medium text-slate-900 leading-relaxed whitespace-pre-line">
-              {activeQuestionText}
+              {displayQuestionText}
             </div>
 
-            {/* Question Diagram / Image Canvas */}
+            {/* Question Image/Diagram */}
             {currentQ.image && (
-              <div className="my-3 border border-slate-300 rounded-xl p-3 bg-slate-50/80 max-w-2xl mx-auto shadow-inner flex justify-center">
+              <div className="my-3 border border-slate-300 rounded-xl p-3 bg-slate-50 max-w-2xl mx-auto shadow-inner flex justify-center">
                 <img
                   src={currentQ.image}
                   alt={`Question ${currentIdx + 1} Graphic`}
-                  className="max-h-80 object-contain rounded"
+                  className="max-h-72 object-contain rounded"
                 />
               </div>
             )}
 
-            {/* Dynamic Bilingual Options List */}
+            {/* Options List */}
             <div className="space-y-2.5 pt-2 max-w-3xl">
-              {optionsList.map((opt, optIdx) => {
+              {displayOptions.map((opt, optIdx) => {
                 const isSelected = selectedAnswers[currentIdx] === optIdx;
                 return (
                   <label
@@ -251,7 +256,7 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
             </div>
           </div>
 
-          {/* Action Footer Buttons */}
+          {/* Footer Buttons */}
           <div className="mt-8 pt-4 border-t border-slate-200 flex flex-wrap gap-2 justify-between items-center bg-slate-50 p-2.5 rounded-xl">
             <div className="flex gap-2">
               <button
