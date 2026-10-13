@@ -5,11 +5,11 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState({});
   const [markedForReview, setMarkedForReview] = useState({});
-  const [language, setLanguage] = useState('English');
+  const [language, setLanguage] = useState('English'); // 'English' or 'Hindi'
   const [timeLeft, setTimeLeft] = useState((testData?.duration_mins || 60) * 60);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
 
-  // Robust Photo Resolver
+  // Multi-tier Photo Resolver
   const candidateRoll = studentData?.id || 'CBT-2026-0000';
   const [candidatePhoto, setCandidatePhoto] = useState(() => {
     return (
@@ -52,26 +52,31 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
 
   const currentQ = questions[currentIdx] || {};
 
-  // Clean Options Normalizer (Fixes broken strings like "2.", "Option 2")
-  const getSanitizedOptions = () => {
-    const rawOpts = (language === 'Hindi' ? (currentQ.options_hi || currentQ.options_en) : currentQ.options_en) || currentQ.options || [];
-    
-    // Standard 4 option fallback labels
-    const defaultLabels = ["Option 1", "Option 2", "Option 3", "Option 4"];
+  // Real-Time Bilingual Question Statement Resolver
+  const activeQuestionText = language === 'Hindi'
+    ? (currentQ.question_hi || currentQ.question_en || currentQ.question || "प्रश्न उपलब्ध नहीं है।")
+    : (currentQ.question_en || currentQ.question_hi || currentQ.question || "Question text not available.");
+
+  // Real-Time Bilingual Options Resolver (Clean labels)
+  const getActiveOptions = () => {
+    const rawOpts = language === 'Hindi'
+      ? (currentQ.options_hi || currentQ.options_en || currentQ.options || [])
+      : (currentQ.options_en || currentQ.options_hi || currentQ.options || []);
+
+    const defaultLabels = ["Option A", "Option B", "Option C", "Option D"];
 
     return defaultLabels.map((defLabel, idx) => {
       const val = rawOpts[idx];
       if (!val || typeof val !== 'string') return defLabel;
       const trimmed = val.trim();
-      // If parsed option was just "1." or "2" or identical to default, show clean label
       if (/^[1-4]\.?$/.test(trimmed)) {
-        return `Option ${trimmed.replace('.', '')}`;
+        return language === 'Hindi' ? `विकल्प ${trimmed.replace('.', '')}` : `Option ${trimmed.replace('.', '')}`;
       }
       return trimmed;
     });
   };
 
-  const optionsList = getSanitizedOptions();
+  const optionsList = getActiveOptions();
 
   const handleSelectOption = (optIdx) => {
     setSelectedAnswers((prev) => ({
@@ -156,7 +161,7 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800 flex flex-col font-sans select-none">
       
-      {/* 1. TCS iON Top Navigation */}
+      {/* 1. TCS iON Top Navigation Bar */}
       <header className="bg-[#245d8b] text-white px-3 sm:px-6 py-2.5 flex justify-between items-center shadow-md">
         <div className="flex items-center space-x-2">
           <span className="font-bold text-sm sm:text-base tracking-wide truncate max-w-[180px] sm:max-w-md">
@@ -170,15 +175,17 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
             <span className="font-mono text-sm sm:text-lg font-bold leading-tight">{formatTimer(timeLeft)}</span>
           </div>
 
+          {/* Bilingual Switcher Dropdown */}
           <div className="flex items-center space-x-1.5 text-xs">
             <span className="hidden sm:inline text-slate-200 font-semibold">View in:</span>
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value)}
-              className="bg-white text-slate-800 rounded px-2 py-1 font-bold text-xs outline-none cursor-pointer"
+              className="bg-white text-slate-800 rounded px-2.5 py-1 font-bold text-xs outline-none cursor-pointer shadow-sm hover:bg-slate-50 transition"
+              title="Change examination display language"
             >
               <option value="English">English</option>
-              <option value="Hindi">हिन्दी</option>
+              <option value="Hindi">हिन्दी (Hindi)</option>
             </select>
           </div>
         </div>
@@ -199,12 +206,12 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
               </span>
             </div>
 
-            {/* Question Text */}
+            {/* Dynamic Bilingual Question Statement */}
             <div className="text-sm sm:text-base font-medium text-slate-900 leading-relaxed whitespace-pre-line">
-              {language === 'Hindi' ? (currentQ.question_hi || currentQ.question_en) : (currentQ.question_en || currentQ.question_hi)}
+              {activeQuestionText}
             </div>
 
-            {/* Question Image / Diagram Canvas (Centered, high clarity) */}
+            {/* Question Diagram / Image Canvas */}
             {currentQ.image && (
               <div className="my-3 border border-slate-300 rounded-xl p-3 bg-slate-50/80 max-w-2xl mx-auto shadow-inner flex justify-center">
                 <img
@@ -215,7 +222,7 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
               </div>
             )}
 
-            {/* Options List */}
+            {/* Dynamic Bilingual Options List */}
             <div className="space-y-2.5 pt-2 max-w-3xl">
               {optionsList.map((opt, optIdx) => {
                 const isSelected = selectedAnswers[currentIdx] === optIdx;
@@ -244,7 +251,7 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
             </div>
           </div>
 
-          {/* Footer Navigation Buttons */}
+          {/* Action Footer Buttons */}
           <div className="mt-8 pt-4 border-t border-slate-200 flex flex-wrap gap-2 justify-between items-center bg-slate-50 p-2.5 rounded-xl">
             <div className="flex gap-2">
               <button
@@ -274,7 +281,7 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
         <div className="w-full lg:w-80 bg-slate-50 border-t lg:border-t-0 border-slate-300 flex flex-col justify-between p-4">
           <div className="space-y-4">
             
-            {/* Candidate Identity with Specific Photo */}
+            {/* Candidate Identity Card */}
             <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center space-x-3 shadow-sm">
               <div className="w-14 h-16 bg-slate-200 border border-slate-300 rounded-lg overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
                 {candidatePhoto ? (
@@ -316,7 +323,7 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
               </div>
             </div>
 
-            {/* Full 100 Question Palette Matrix */}
+            {/* Question Palette Matrix */}
             <div>
               <div className="flex justify-between items-center mb-2">
                 <span className="text-xs font-bold text-slate-700">Question Palette:</span>
