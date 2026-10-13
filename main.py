@@ -21,10 +21,32 @@ app.add_middleware(
 # Central In-Memory Store
 LIVE_TESTS_STORE = []
 REGISTERED_STUDENTS_STORE = []
+GRIEVANCES_STORE = []
 
 @app.get("/")
 def home():
     return {"status": "EXAMCBT backend is online and running successfully"}
+
+# ----------------- GRIEVANCE & SUPPORT DESK APIS -----------------
+@app.get("/api/grievances")
+def get_all_grievances():
+    return {"status": "success", "grievances": GRIEVANCES_STORE}
+
+@app.post("/api/grievances/submit")
+def submit_grievance(item: dict):
+    if "status" not in item:
+        item["status"] = "PENDING"
+    GRIEVANCES_STORE.insert(0, item)
+    return {"status": "success", "message": "Grievance logged centrally"}
+
+@app.post("/api/grievances/resolve")
+def resolve_grievance(data: dict):
+    grievance_id = data.get("id")
+    for g in GRIEVANCES_STORE:
+        if g.get("id") == grievance_id:
+            g["status"] = "RESOLVED"
+            return {"status": "success", "message": "Marked as resolved"}
+    return {"status": "error", "message": "Grievance not found"}
 
 # ----------------- LIVE EXAM UPDATES API (Automated Ticker) -----------------
 @app.get("/api/live-exam-updates")
