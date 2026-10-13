@@ -70,6 +70,16 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
     fetchStudents();
   }, []);
 
+  // Point 7: Delete / Revoke Student Handler
+  const handleRevokeStudent = (studentId) => {
+    if (window.confirm("Are you sure you want to permanently revoke and remove this student from the portal?")) {
+      const updatedList = registeredStudents.filter(s => s.id !== studentId);
+      setRegisteredStudents(updatedList);
+      localStorage.setItem('cbt_students', JSON.stringify(updatedList));
+      alert("Student access successfully revoked and record removed.");
+    }
+  };
+
   const handleSelectTestToEdit = (test) => {
     setSelectedTestId(test.id);
     setEditingTest(JSON.parse(JSON.stringify(test)));
@@ -381,7 +391,7 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
           </div>
         )}
 
-        {/* TAB 2: UPLOAD & SYNC (WITH PROMPT INSTRUCTION BOX) */}
+        {/* TAB 2: UPLOAD & SYNC */}
         {activeTab === 'pdf' && (
           <div className="space-y-5">
             <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 max-w-md mx-auto">
@@ -423,8 +433,6 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
 
             {uploadMethod === 'gemini_json' ? (
               <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
-                
-                {/* INSTRUCTION & COPY PROMPT BOX */}
                 <div className="bg-emerald-950/40 border border-emerald-500/30 p-4 rounded-2xl space-y-3">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                     <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
@@ -442,12 +450,6 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
                   <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl font-mono text-[11px] text-slate-300 whitespace-pre-wrap select-all max-h-36 overflow-y-auto">
                     {geminiPromptText}
                   </div>
-
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    1. Upar <strong>Copy Prompt</strong> dabayein.<br />
-                    2. Gemini ya ChatGPT me apni PDF drop karke yeh prompt paste karein.<br />
-                    3. AI jo JSON generate kare, use neeche wale box me paste karke <strong>Instant Sync</strong> daba dein!
-                  </p>
                 </div>
 
                 <textarea
@@ -480,7 +482,6 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
                     <div className="text-sm font-semibold text-slate-200">
                       {pdfFile ? pdfFile.name : "Click to select Question Paper PDF"}
                     </div>
-                    <p className="text-xs text-slate-500">Auto extracts questions & diagrams via PyMuPDF</p>
                   </label>
                 </div>
 
@@ -502,11 +503,11 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
           </div>
         )}
 
-        {/* TAB 3: CANDIDATE RECORDS */}
+        {/* TAB 3: CANDIDATE RECORDS & REVOKE CONTROLS (Point 7) */}
         {activeTab === 'students' && (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
             <div className="p-4 border-b border-slate-800 flex justify-between items-center">
-              <h3 className="font-bold text-sm text-slate-200">Registered Students Roster</h3>
+              <h3 className="font-bold text-sm text-slate-200">Registered Students Roster & Operations</h3>
               <div className="flex items-center space-x-3">
                 <button
                   onClick={fetchStudents}
@@ -526,22 +527,34 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
                     <tr>
                       <th className="p-3">Roll ID</th>
                       <th className="p-3">Candidate Name</th>
-                      <th className="p-3">Email Address</th>
-                      <th className="p-3">Registration Date</th>
-                      <th className="p-3">Status</th>
+                      <th className="p-3">Email & Phone</th>
+                      <th className="p-3">Registered Date</th>
+                      <th className="p-3">Current Tier</th>
+                      <th className="p-3 text-right">Action Controls</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y border-slate-800">
+                  <tbody className="divide-y divide-slate-800">
                     {registeredStudents.map((st) => (
                       <tr key={st.id} className="hover:bg-slate-800/40">
                         <td className="p-3 font-mono text-emerald-400 font-bold">{st.id}</td>
                         <td className="p-3 font-semibold text-slate-100">{st.name}</td>
-                        <td className="p-3 text-slate-400">{st.email}</td>
-                        <td className="p-3 text-slate-500">{st.createdAt}</td>
+                        <td className="p-3 text-slate-400">
+                          <div>{st.email}</div>
+                          <div className="text-[10px] text-slate-500 font-mono">{st.phone || 'N/A'}</div>
+                        </td>
+                        <td className="p-3 text-slate-500">{st.createdAt || 'N/A'}</td>
                         <td className="p-3">
-                          <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                            Active
+                          <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+                            {st.tier || 'FREE'}
                           </span>
+                        </td>
+                        <td className="p-3 text-right">
+                          <button
+                            onClick={() => handleRevokeStudent(st.id)}
+                            className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 px-3 py-1.5 rounded-xl font-bold transition text-[11px]"
+                          >
+                            🗑️ Revoke / Delete
+                          </button>
                         </td>
                       </tr>
                     ))}
