@@ -6,6 +6,7 @@ import fitz  # PyMuPDF
 import base64
 import json
 import re
+import feedparser
 
 app = FastAPI(title="EXAMCBT AI Engine")
 
@@ -24,6 +25,30 @@ REGISTERED_STUDENTS_STORE = []
 @app.get("/")
 def home():
     return {"status": "EXAMCBT backend is online and running successfully"}
+
+# ----------------- LIVE EXAM UPDATES API (Automated Ticker) -----------------
+@app.get("/api/live-exam-updates")
+def get_live_exam_updates():
+    try:
+        feed = feedparser.parse("https://pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=1")
+        updates = []
+        for entry in feed.entries[:6]:
+            updates.append({
+                "text": entry.title,
+                "link": entry.link if hasattr(entry, 'link') else "https://india.gov.in"
+            })
+        if not updates:
+            raise Exception("No entries found")
+        return {"status": "success", "updates": updates}
+    except Exception as e:
+        fallback_updates = [
+            {"text": "SSC CGL Tier-I Notification & Exam Date Schedule Announced 2026", "link": "https://ssc.gov.in"},
+            {"text": "NTA Annual Examination Calendar & Directorate Circular Released", "link": "https://nta.ac.in"},
+            {"text": "Railway RRB NTPC Computer Based Test City Intimation Live", "link": "https://indianrailways.gov.in"},
+            {"text": "UPSC Civil Services Examination Official Policy Notification", "link": "https://upsc.gov.in"},
+            {"text": "Ministry of Education - National Educational Policy Guidelines Update", "link": "https://www.education.gov.in"}
+        ]
+        return {"status": "success", "updates": fallback_updates}
 
 # ----------------- TEST APIS -----------------
 @app.get("/api/tests")
@@ -52,7 +77,6 @@ def get_all_students():
 
 @app.post("/api/students/register")
 def register_student(student: dict):
-    # Default tier set to FREE if not provided
     if "tier" not in student:
         student["tier"] = "FREE"
     
@@ -60,7 +84,6 @@ def register_student(student: dict):
     if not existing:
         REGISTERED_STUDENTS_STORE.insert(0, student)
     else:
-        # Update existing record if needed
         idx = REGISTERED_STUDENTS_STORE.index(existing)
         REGISTERED_STUDENTS_STORE[idx].update(student)
     return {"status": "success", "students": REGISTERED_STUDENTS_STORE}
@@ -68,7 +91,7 @@ def register_student(student: dict):
 @app.post("/api/students/update-tier")
 def update_student_tier(data: dict):
     student_id = data.get("id")
-    new_tier = data.get("tier") # FREE, PREMIUM_50, PRO_150
+    new_tier = data.get("tier")
     for student in REGISTERED_STUDENTS_STORE:
         if student.get("id") == student_id:
             student["tier"] = new_tier
