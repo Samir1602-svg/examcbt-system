@@ -92,7 +92,7 @@ def delete_live_test(test_id: str):
     LIVE_TESTS_STORE = [t for t in LIVE_TESTS_STORE if t.get("id") != test_id]
     return {"status": "success"}
 
-# ----------------- STUDENT ROSTER, PROFILE & TIER APIS -----------------
+# ----------------- STUDENT ROSTER & TIER APIS -----------------
 @app.get("/api/students")
 def get_all_students():
     return {"status": "success", "students": REGISTERED_STUDENTS_STORE}
@@ -115,9 +115,10 @@ def update_student_profile(data: dict):
     student_id = data.get("id")
     avatar = data.get("avatar")
     for student in REGISTERED_STUDENTS_STORE:
-        if student.get("id") == student_id:
+        if student.get("id") == student_id or student.get("email") == data.get("email"):
             if avatar:
                 student["avatar"] = avatar
+                student["photo"] = avatar
             return {"status": "success", "message": "Profile updated successfully"}
     return {"status": "error", "message": "Student not found"}
 
