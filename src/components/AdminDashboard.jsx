@@ -261,7 +261,7 @@ Crucial Formatting Rules:
     alert(`Success: "${editingTest.title}" has been updated successfully.`);
   };
 
-  // Auto-Repairing and Fault-Tolerant JSON Parser
+  // Bulletproof Auto-Repairing JSON Parser
   const sanitizeAndParseJSON = (rawStr) => {
     let clean = rawStr.trim();
     if (clean.startsWith("```json")) clean = clean.slice(7);
@@ -269,7 +269,7 @@ Crucial Formatting Rules:
     if (clean.endsWith("```")) clean = clean.slice(0, -3);
     clean = clean.trim();
 
-    // Auto-fix missing array square brackets if user pasted objects directly
+    // Auto-fix missing square brackets at start or end
     if (!clean.startsWith("[") && clean.endsWith("]")) {
       clean = "[" + clean;
     } else if (clean.startsWith("[") && !clean.endsWith("]")) {
@@ -278,17 +278,16 @@ Crucial Formatting Rules:
       clean = "[" + clean + "]";
     }
 
-    // Replace unicode/smart curly quotes with standard double/single quotes
+    // Replace curly / smart quotes
     clean = clean.replace(/[\u201C\u201D]/g, '"');
     clean = clean.replace(/[\u2018\u2019]/g, "'");
 
-    // Remove any trailing commas before closing braces or brackets
+    // Remove trailing commas
     clean = clean.replace(/,\s*([\]}])/g, '$1');
 
     try {
       return JSON.parse(clean);
     } catch (e1) {
-      // Auto-repair unescaped inner quotes inside question text strings
       try {
         const sanitized = clean.replace(/("(?:question|subject)":\s*")([\s\S]*?)("(?=,\s*"\w+":|\s*}))/g, (match, prefix, content, suffix) => {
           const safeContent = content.replace(/(?<!\\)"/g, '\\"');
@@ -313,10 +312,10 @@ Crucial Formatting Rules:
 
     try {
       const parsed = sanitizeAndParseJSON(jsonInput);
-      const qList = Array.isArray(parsed) ? parsed : (parsed.questions || []);
+      const qList = Array.isArray(parsed) ? parsed : (parsed.questions || [parsed]);
 
       if (qList.length === 0) {
-        throw new Error("No valid questions found in array");
+        throw new Error("No valid questions found");
       }
 
       const newMock = {
@@ -349,7 +348,7 @@ Crucial Formatting Rules:
       setActiveTab('live_tests');
       alert(`Success: "${newMock.title}" containing ${newMock.questions.length} questions has been successfully published.`);
     } catch (e) {
-      alert("JSON Syntax Error: Please ensure your input is a valid JSON array. The system automatically handles bracket wrappers and internal quotes.");
+      alert("JSON Syntax Error: Please check your JSON format. The system automatically repairs missing brackets and quotes, but please ensure it is valid text.");
     }
   };
 
