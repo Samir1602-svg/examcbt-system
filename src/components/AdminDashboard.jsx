@@ -14,6 +14,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   const [uploading, setUploading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [registeredStudents, setRegisteredStudents] = useState([]);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   // Directorate Circulars Management
   const [circulars, setCirculars] = useState(() => {
@@ -42,6 +43,34 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   // Selected Test for Editing
   const [selectedTestId, setSelectedTestId] = useState(null);
   const [editingTest, setEditingTest] = useState(null);
+
+  // Official AI PDF Extraction Prompt
+  const aiExtractionPrompt = `Analyze the attached examination question paper PDF and extract all questions into a pure, valid UTF-8 JSON array strictly adhering to this structure. Do not output any markdown notes, preamble, or conversational commentary outside the JSON array:
+
+[
+  {
+    "question": "Exact question text in Hindi or English (Preserve all formulas, indices, equations, and unicode symbols)",
+    "options": [
+      "Option 1 text",
+      "Option 2 text",
+      "Option 3 text",
+      "Option 4 text"
+    ],
+    "correct_option_index": 0,
+    "subject": "Mathematical Abilities / Reasoning / General Studies / English"
+  }
+]
+
+Crucial Formatting Rules:
+1. "correct_option_index" must be an integer: 0 for Option 1, 1 for Option 2, 2 for Option 3, or 3 for Option 4.
+2. Escape all internal double quotes inside sentences using \\" (e.g., \\"sample text\\").
+3. Ensure Hindi unicode characters and mathematical symbols are cleanly preserved without truncation.`;
+
+  const handleCopyAIPrompt = () => {
+    navigator.clipboard.writeText(aiExtractionPrompt);
+    setCopiedPrompt(true);
+    setTimeout(() => setCopiedPrompt(false), 3000);
+  };
 
   const fetchStudents = async () => {
     let combined = [];
@@ -113,7 +142,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   };
 
   const handleDeleteGrievance = (gId) => {
-    if (window.confirm("Are you sure you want to delete this grievance record?")) {
+    if (window.confirm("Are you sure you want to permanently delete this grievance record?")) {
       const updated = grievances.filter(g => g.id !== gId);
       setGrievances(updated);
       localStorage.setItem('cbt_user_feedbacks', JSON.stringify(updated));
@@ -158,10 +187,10 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
     const updated = { ...editingTest };
     const newQ = {
       id: updated.questions.length + 1,
-      question: "नया प्रश्न / New Question",
-      question_en: "New Question",
-      question_hi: "नया प्रश्न",
-      options: ["विकल्प 1", "विकल्प 2", "विकल्प 3", "विकल्प 4"],
+      question: "New Question Statement",
+      question_en: "New Question Statement",
+      question_hi: "नया प्रश्न विवरण",
+      options: ["Option 1", "Option 2", "Option 3", "Option 4"],
       options_en: ["Option 1", "Option 2", "Option 3", "Option 4"],
       options_hi: ["विकल्प 1", "विकल्प 2", "विकल्प 3", "विकल्प 4"],
       correct_option_index: 0,
@@ -174,10 +203,10 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   const handleSaveTestChanges = () => {
     editingTest.isRecentlyUpdated = true;
     onUpdateExistingTest(editingTest);
-    alert(`✓ "${editingTest.title}" updated successfully!`);
+    alert(`Success: "${editingTest.title}" has been updated successfully.`);
   };
 
-  // Robust Fault-Tolerant JSON Parser (Cleans smart quotes, inner quotes & trailing commas)
+  // Robust Fault-Tolerant JSON Sanitizer (Handles unescaped inner quotes, curly quotes, and trailing commas)
   const sanitizeAndParseJSON = (rawStr) => {
     let clean = rawStr.trim();
     if (clean.startsWith("```json")) clean = clean.slice(7);
@@ -185,7 +214,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
     if (clean.endsWith("```")) clean = clean.slice(0, -3);
     clean = clean.trim();
 
-    // Replace curly/smart quotes with standard quotes
+    // Replace curly / smart quotes with standard ASCII quotation marks
     clean = clean.replace(/[\u201C\u201D]/g, '"');
     clean = clean.replace(/[\u2018\u2019]/g, "'");
 
@@ -195,12 +224,13 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
     try {
       return JSON.parse(clean);
     } catch (e1) {
-      // Fallback: fix unescaped double quotes inside strings
+      // Auto-escape unescaped inner quotes in string values
       try {
-        const fixedStr = clean.replace(/:\s*"([^"]*)"/g, (match, p1) => {
-          return ': "' + p1.replace(/"/g, '\\"') + '"';
+        const sanitized = clean.replace(/("(?:question|subject)":\s*")([\s\S]*?)("(?=,\s*"\w+":|\s*}))/g, (match, prefix, content, suffix) => {
+          const safeContent = content.replace(/(?<!\\)"/g, '\\"');
+          return `${prefix}${safeContent}${suffix}`;
         });
-        return JSON.parse(fixedStr);
+        return JSON.parse(sanitized);
       } catch (e2) {
         throw new Error("JSON Parse Error");
       }
@@ -209,11 +239,11 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
 
   const handleGeminiJsonImport = () => {
     if (!testTitle.trim()) {
-      alert("Kripya Test Title enter karein!");
+      alert("Validation Error: Please enter a Test Title before proceeding.");
       return;
     }
     if (!jsonInput.trim()) {
-      alert("Kripya JSON data paste karein!");
+      alert("Validation Error: Please paste the JSON question array.");
       return;
     }
 
@@ -249,24 +279,24 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
       };
 
       onPublishTest(newMock);
-      setStatusMessage(`✓ Success! ${newMock.questions.length} questions imported cleanly.`);
+      setStatusMessage(`Success: ${newMock.questions.length} questions imported cleanly.`);
       setTestTitle('');
       setJsonInput('');
       setActiveTab('live_tests');
-      alert(`✓ Success! "${newMock.title}" with ${newMock.questions.length} questions has been successfully published.`);
+      alert(`Success: "${newMock.title}" containing ${newMock.questions.length} questions has been successfully published.`);
     } catch (e) {
-      alert("Invalid JSON format! Kripya check karein ki JSON array '[ ... ]' se shuru aur band ho raha hai aur quotes sahi hain.");
+      alert("JSON Syntax Error: Please ensure your input is a valid JSON array starting with '[' and ending with ']'. Ensure quotes are properly formatted.");
     }
   };
 
   const handlePdfUpload = async () => {
     if (!pdfFile || !testTitle) {
-      alert("Kripya Test Title aur PDF file select karein!");
+      alert("Validation Error: Both Test Title and PDF file are required.");
       return;
     }
 
     setUploading(true);
-    setStatusMessage('Uploading to Backend & parsing...');
+    setStatusMessage('Uploading document to server and parsing questions...');
 
     const formData = new FormData();
     formData.append('file', pdfFile);
@@ -305,10 +335,10 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
         setTestTitle('');
         setPdfFile(null);
         setActiveTab('live_tests');
-        alert(`✓ Success! "${newMockTest.title}" published with ${newMockTest.questions.length} questions.`);
+        alert(`Success: "${newMockTest.title}" published with ${newMockTest.questions.length} questions.`);
       }
     } catch (err) {
-      setStatusMessage(`PDF font error. Please use "AI / JSON" tab for Hindi Unicode papers.`);
+      setStatusMessage(`PDF Font Encoding Error: Please use the "AI / JSON" tab for Unicode Hindi papers.`);
     } finally {
       setUploading(false);
     }
@@ -331,10 +361,11 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
     setNewShowcaseCode('');
     setNewShowcaseName('');
     setNewShowcasePattern('');
+    alert("Success: Demo showcase card successfully added.");
   };
 
   const handleDeleteShowcaseExam = (index) => {
-    if (window.confirm("Remove this showcase exam?")) {
+    if (window.confirm("Are you sure you want to remove this showcase exam?")) {
       const updated = showcaseExams.filter((_, idx) => idx !== index);
       setShowcaseExams(updated);
       localStorage.setItem('cbt_showcase_exams', JSON.stringify(updated));
@@ -348,7 +379,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
     const newCircular = {
       id: `circ-${Date.now()}`,
       title: circularTitle.trim(),
-      fileName: circularFile ? circularFile.name : "Circular.pdf",
+      fileName: circularFile ? circularFile.name : "Circular_Notice.pdf",
       date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     };
 
@@ -357,19 +388,23 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
     localStorage.setItem('cbt_directorate_circulars', JSON.stringify(updated));
     setCircularTitle('');
     setCircularFile(null);
+    alert("Success: Directorate circular broadcasted to announcements.");
   };
 
   const handleDeleteCircular = (circId) => {
-    const updated = circulars.filter(c => c.id !== circId);
-    setCirculars(updated);
-    localStorage.setItem('cbt_directorate_circulars', JSON.stringify(updated));
+    if (window.confirm("Are you sure you want to delete this circular announcement?")) {
+      const updated = circulars.filter(c => c.id !== circId);
+      setCirculars(updated);
+      localStorage.setItem('cbt_directorate_circulars', JSON.stringify(updated));
+    }
   };
 
   const handleRevokeStudent = (studentId) => {
-    if (window.confirm("Revoke this candidate?")) {
+    if (window.confirm("Are you sure you want to permanently revoke authorization for this candidate?")) {
       const updated = registeredStudents.filter(s => s.id !== studentId);
       setRegisteredStudents(updated);
       localStorage.setItem('cbt_students', JSON.stringify(updated));
+      alert("Candidate access has been revoked.");
     }
   };
 
@@ -400,7 +435,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
           <div onClick={() => setActiveTab('grievances')} className="bg-slate-900 border border-slate-800 hover:border-rose-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Support Grievances</span>
             <div className="text-2xl sm:text-3xl font-black text-rose-400 mt-1">{pendingCount} <span className="text-xs text-slate-500 font-normal">Pending</span></div>
-            <span className="text-[10px] text-rose-400 font-bold block mt-1">Resolve tickets →</span>
+            <span className="text-[10px] text-rose-400 font-bold block mt-1">Resolve candidate tickets →</span>
           </div>
           <div onClick={() => setActiveTab('students')} className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Total Registered</span>
@@ -472,7 +507,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
                 onClick={() => setUploadMethod('gemini_json')}
                 className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${uploadMethod === 'gemini_json' ? 'bg-emerald-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
               >
-                ✨ AI / JSON (Perfect Hindi Fonts)
+                ✨ AI / JSON (Clean Unicode Hindi)
               </button>
               <button
                 onClick={() => setUploadMethod('pdf')}
@@ -484,17 +519,17 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-900 p-4 rounded-2xl border border-slate-800">
               <div>
-                <label className="text-xs text-slate-400 font-bold block mb-1">Test Title</label>
+                <label className="text-xs text-slate-400 font-bold block mb-1">Test Title *</label>
                 <input
                   type="text"
-                  placeholder="e.g. SSC CGL Tier-1 Hindi Official Shift"
+                  placeholder="e.g. SSC CGL Tier-1 Hindi Shift Assessment"
                   value={testTitle}
                   onChange={(e) => setTestTitle(e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-emerald-400"
                 />
               </div>
               <div>
-                <label className="text-xs text-slate-400 font-bold block mb-1">Duration (Minutes)</label>
+                <label className="text-xs text-slate-400 font-bold block mb-1">Duration (Minutes) *</label>
                 <input
                   type="number"
                   value={duration}
@@ -506,25 +541,43 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
 
             {uploadMethod === 'gemini_json' ? (
               <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
-                <div className="bg-emerald-950/40 border border-emerald-500/30 p-3.5 rounded-2xl">
-                  <span className="text-xs font-bold text-emerald-300">
-                    💡 Tip: Paste your JSON array directly. Inner quotes and clean Hindi font encoding are automatically sanitized.
-                  </span>
+                
+                {/* AI Extraction Prompt Helper Card */}
+                <div className="bg-emerald-950/40 border border-emerald-500/30 p-4 rounded-2xl space-y-3">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                      <span>🤖</span> AI Prompt for PDF Extraction (Upload PDF to ChatGPT/Gemini with this prompt):
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyAIPrompt}
+                      className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs px-3.5 py-1.5 rounded-lg shadow transition active:scale-95 shrink-0"
+                    >
+                      {copiedPrompt ? "✓ Copied to Clipboard!" : "📋 Copy AI Extraction Prompt"}
+                    </button>
+                  </div>
+
+                  <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl font-mono text-[11px] text-slate-300 whitespace-pre-wrap select-all max-h-36 overflow-y-auto">
+                    {aiExtractionPrompt}
+                  </div>
                 </div>
 
-                <textarea
-                  rows={10}
-                  placeholder='Paste JSON array here... e.g. [{"question": "...", "options": [...], "correct_option_index": 0}]'
-                  value={jsonInput}
-                  onChange={(e) => setJsonInput(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-xs font-mono text-slate-200 outline-none focus:border-emerald-500"
-                />
+                <div>
+                  <label className="text-xs text-slate-400 font-bold block mb-1">Paste JSON Array Data *</label>
+                  <textarea
+                    rows={10}
+                    placeholder='Paste sanitized JSON array here... e.g. [{"question": "...", "options": [...], "correct_option_index": 0}]'
+                    value={jsonInput}
+                    onChange={(e) => setJsonInput(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-xs font-mono text-slate-200 outline-none focus:border-emerald-500"
+                  />
+                </div>
 
                 <button
                   onClick={handleGeminiJsonImport}
                   className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition active:scale-95"
                 >
-                  🚀 Publish Hindi Questions to Student Portal
+                  🚀 Publish Validated Questions to Portal
                 </button>
               </div>
             ) : (
@@ -556,7 +609,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
                   disabled={uploading}
                   className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg ${uploading ? 'bg-slate-700 text-slate-400' : 'bg-amber-500 hover:bg-amber-600 text-slate-950'}`}
                 >
-                  {uploading ? 'Processing PDF on Render Backend...' : 'Generate & Publish Paper'}
+                  {uploading ? 'Processing Document on Server...' : 'Generate & Publish Paper'}
                 </button>
               </div>
             )}
@@ -598,7 +651,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-6">
                 <div className="flex justify-between items-center border-b border-slate-800 pb-4">
                   <div>
-                    <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Editing Test</span>
+                    <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Editing Active Assessment</span>
                     <h2 className="text-xl font-bold text-white">{editingTest.title}</h2>
                   </div>
                   <div className="flex space-x-3">
@@ -664,7 +717,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
                 <thead className="bg-slate-950 text-slate-400">
                   <tr>
                     <th className="p-3">Candidate</th>
-                    <th className="p-3">Message</th>
+                    <th className="p-3">Grievance Statement</th>
                     <th className="p-3">Status</th>
                     <th className="p-3 text-right">Action</th>
                   </tr>
@@ -677,7 +730,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
                       <td className="p-3 font-bold">{item.status}</td>
                       <td className="p-3 text-right">
                         {item.status !== 'RESOLVED' && (
-                          <button onClick={() => handleResolveGrievance(item.id)} className="bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded text-xs font-bold mr-2">✓ Resolve</button>
+                          <button onClick={() => handleResolveGrievance(item.id)} className="bg-emerald-500/20 text-emerald-400 px-2.5 py-1 rounded text-xs font-bold mr-2">✓ Resolve</button>
                         )}
                         <button onClick={() => handleDeleteGrievance(item.id)} className="text-rose-400 text-xs">🗑️</button>
                       </td>
@@ -695,8 +748,8 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
             <h3 className="text-lg font-black text-white">Manage Landing Page Showcase Cards</h3>
             <form onSubmit={handleAddShowcaseExam} className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-950 p-4 rounded-2xl border border-slate-800">
               <input type="text" placeholder="Exam Code (e.g. SSC-CGL)" value={newShowcaseCode} onChange={(e) => setNewShowcaseCode(e.target.value)} className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
-              <input type="text" placeholder="Exam Name" value={newShowcaseName} onChange={(e) => setNewShowcaseName(e.target.value)} className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
-              <input type="text" placeholder="Pattern (Tier-1)" value={newShowcasePattern} onChange={(e) => setNewShowcasePattern(e.target.value)} className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
+              <input type="text" placeholder="Exam Full Title" value={newShowcaseName} onChange={(e) => setNewShowcaseName(e.target.value)} className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
+              <input type="text" placeholder="Pattern Structure (e.g. Tier-1 (100 Qs / 60 Min))" value={newShowcasePattern} onChange={(e) => setNewShowcasePattern(e.target.value)} className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
               <button type="submit" className="bg-teal-500 text-slate-950 font-black py-2 rounded-xl text-xs sm:col-span-2">+ Add Showcase Card</button>
             </form>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -718,8 +771,8 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
             <h3 className="text-lg font-black text-white">Publish Directorate Circulars</h3>
             <form onSubmit={handlePublishCircular} className="space-y-3">
-              <input type="text" placeholder="Circular Title" value={circularTitle} onChange={(e) => setCircularTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white" />
-              <button type="submit" className="w-full bg-purple-600 text-white font-black py-2.5 rounded-xl text-xs">Publish Circular</button>
+              <input type="text" placeholder="Circular Official Title" value={circularTitle} onChange={(e) => setCircularTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white" />
+              <button type="submit" className="w-full bg-purple-600 text-white font-black py-2.5 rounded-xl text-xs">Publish Circular Notice</button>
             </form>
             <div className="space-y-2">
               {circulars.map((c) => (
@@ -735,15 +788,15 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
         {/* TAB: CANDIDATE RECORDS */}
         {activeTab === 'students' && (
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden p-4">
-            <h3 className="font-bold text-sm text-slate-200 mb-3">Registered Candidates ({registeredStudents.length})</h3>
+            <h3 className="font-bold text-sm text-slate-200 mb-3">Registered Candidates Roster ({registeredStudents.length})</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-950 text-slate-400">
                   <tr>
                     <th className="p-3">Roll ID</th>
-                    <th className="p-3">Name</th>
-                    <th className="p-3">Email</th>
-                    <th className="p-3 text-right">Action</th>
+                    <th className="p-3">Candidate Name</th>
+                    <th className="p-3">Registered Email</th>
+                    <th className="p-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
@@ -753,7 +806,7 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
                       <td className="p-3">{st.name}</td>
                       <td className="p-3 text-slate-400">{st.email}</td>
                       <td className="p-3 text-right">
-                        <button onClick={() => handleRevokeStudent(st.id)} className="text-rose-400 text-xs">🗑️ Revoke</button>
+                        <button onClick={() => handleRevokeStudent(st.id)} className="text-rose-400 text-xs font-bold">Revoke Access</button>
                       </td>
                     </tr>
                   ))}
