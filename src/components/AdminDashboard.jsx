@@ -72,28 +72,25 @@ Crucial Formatting Rules:
     setTimeout(() => setCopiedPrompt(false), 3000);
   };
 
+  // Central Cloud Database Sync for Students Roster
   const fetchStudents = async () => {
-    let combined = [];
     try {
       const res = await fetch(`${API_BASE_URL}/api/students`);
       if (res.ok) {
         const data = await res.json();
         if (data.status === 'success' && Array.isArray(data.students)) {
-          combined = data.students;
+          setRegisteredStudents(data.students);
+          localStorage.setItem('cbt_students', JSON.stringify(data.students));
+          return;
         }
       }
     } catch (e) {
-      console.warn("Could not fetch remote students:", e);
+      console.warn("Could not fetch remote students from central cloud DB, using offline backup:", e);
     }
 
+    // Fallback to local storage if offline
     const local = JSON.parse(localStorage.getItem('cbt_students') || '[]');
-    local.forEach(locS => {
-      if (!combined.some(c => c.id === locS.id)) {
-        combined.push(locS);
-      }
-    });
-
-    setRegisteredStudents(combined);
+    setRegisteredStudents(local);
   };
 
   const fetchGrievances = async () => {
@@ -269,7 +266,6 @@ Crucial Formatting Rules:
     if (clean.endsWith("```")) clean = clean.slice(0, -3);
     clean = clean.trim();
 
-    // Auto-fix missing square brackets at start or end
     if (!clean.startsWith("[") && clean.endsWith("]")) {
       clean = "[" + clean;
     } else if (clean.startsWith("[") && !clean.endsWith("]")) {
@@ -278,11 +274,8 @@ Crucial Formatting Rules:
       clean = "[" + clean + "]";
     }
 
-    // Replace curly / smart quotes
     clean = clean.replace(/[\u201C\u201D]/g, '"');
     clean = clean.replace(/[\u2018\u2019]/g, "'");
-
-    // Remove trailing commas
     clean = clean.replace(/,\s*([\]}])/g, '$1');
 
     try {
@@ -348,7 +341,7 @@ Crucial Formatting Rules:
       setActiveTab('live_tests');
       alert(`Success: "${newMock.title}" containing ${newMock.questions.length} questions has been successfully published.`);
     } catch (e) {
-      alert("JSON Syntax Error: Please check your JSON format. The system automatically repairs missing brackets and quotes, but please ensure it is valid text.");
+      alert("JSON Syntax Error: Please check your JSON format.");
     }
   };
 
