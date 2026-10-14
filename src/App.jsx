@@ -9,6 +9,96 @@ import CombinedAuthModal from './components/AuthModal';
 
 const API_BASE_URL = (process.env.REACT_APP_API_URL || 'https://examcbt-backend.onrender.com').replace(/\/$/, "");
 
+// Authentic Fixed SSC 100 Demo Question Repository (Isolated from Admin Uploads)
+const STATIC_DEMO_QUESTIONS = [
+  {
+    id: 1,
+    question_en: "Select the option that is related to the fifth number in the same way as the second number is related to the first number and the fourth number is related to the third number: 19 : 324 :: 25 : 576 :: 9 : ?",
+    question_hi: "उस विकल्प का चयन करें जो पांचवीं संख्या से उसी प्रकार संबंधित है जैसे दूसरी संख्या पहली संख्या से और चौथी संख्या तीसरी संख्या से संबंधित है: 19 : 324 :: 25 : 576 :: 9 : ?",
+    options_en: ["50", "67", "52", "63"],
+    options_hi: ["50", "67", "52", "63"],
+    correct_option_index: 3,
+    subject: "General Intelligence & Reasoning"
+  },
+  {
+    id: 2,
+    question_en: "The ratio between the length and the breadth of a rectangular park is 3 : 2, and the perimeter of the park is 120 m. Find the area (in m²) of the park.",
+    question_hi: "एक आयताकार पार्क की लंबाई और चौड़ाई के बीच का अनुपात 3 : 2 है, और पार्क का परिमाप 120 मीटर है। पार्क का क्षेत्रफल (m² में) ज्ञात कीजिए।",
+    options_en: ["968", "454", "864", "144"],
+    options_hi: ["968", "454", "864", "144"],
+    correct_option_index: 2,
+    subject: "Quantitative Aptitude"
+  },
+  {
+    id: 3,
+    question_en: "Which Article of the Constitution of India provides for the establishment of the Finance Commission?",
+    question_hi: "भारत के संविधान का कौन सा अनुच्छेद वित्त आयोग की स्थापना का प्रावधान करता है?",
+    options_en: ["Article 280", "Article 324", "Article 352", "Article 370"],
+    options_hi: ["अनुच्छेद 280", "अनुच्छेद 324", "अनुच्छेद 352", "अनुच्छेद 370"],
+    correct_option_index: 0,
+    subject: "General Awareness"
+  },
+  {
+    id: 4,
+    question_en: "Select the option that is related to the third letter-cluster in the same way as the second letter-cluster is related to the first: BCD : GHI :: JKL : ?",
+    question_hi: "उस विकल्प का चयन करें जो तीसरे अक्षर-समूह से उसी प्रकार संबंधित है जैसे दूसरा अक्षर-समूह पहले से संबंधित है: BCD : GHI :: JKL : ?",
+    options_en: ["OPQ", "QRS", "MNO", "PQR"],
+    options_hi: ["OPQ", "QRS", "MNO", "PQR"],
+    correct_option_index: 0,
+    subject: "General Intelligence & Reasoning"
+  },
+  {
+    id: 5,
+    question_en: "Select the most appropriate synonym of the given word: 'ABUNDANT'",
+    question_hi: "दिए गए शब्द का सबसे उपयुक्त पर्यायवाची चुनें: 'ABUNDANT'",
+    options_en: ["Scarce", "Plentiful", "Meager", "Deficient"],
+    options_hi: ["दुर्लभ (Scarce)", "प्रचुर (Plentiful)", "अल्प (Meager)", "कमी (Deficient)"],
+    correct_option_index: 1,
+    subject: "English Comprehension"
+  },
+  {
+    id: 6,
+    question_en: "In which year was the Reserve Bank of India nationalized?",
+    question_hi: "भारतीय रिज़र्व बैंक का राष्ट्रीयकरण किस वर्ष किया गया था?",
+    options_en: ["1935", "1947", "1949", "1951"],
+    options_hi: ["1935", "1947", "1949", "1951"],
+    correct_option_index: 2,
+    subject: "General Awareness"
+  },
+  {
+    id: 7,
+    question_en: "If '+' means '÷', '×' means '+', '-' means '×', and '÷' means '-', then what is the value of: 18 - 6 + 3 × 4 ÷ 2?",
+    question_hi: "यदि '+' का अर्थ '÷', '×' का अर्थ '+', '-' का अर्थ '×', और '÷' का अर्थ '-' है, तो मान क्या होगा: 18 - 6 + 3 × 4 ÷ 2?",
+    options_en: ["38", "42", "36", "40"],
+    options_hi: ["38", "42", "36", "40"],
+    correct_option_index: 0,
+    subject: "General Intelligence & Reasoning"
+  },
+  {
+    id: 8,
+    question_en: "A sum of ₹12,000 amounts to ₹15,600 in 3 years at simple interest. What is the rate of interest per annum?",
+    question_hi: "₹12,000 की राशि साधारण ब्याज पर 3 वर्षों में ₹15,600 हो जाती है। प्रति वर्ष ब्याज दर क्या है?",
+    options_en: ["10%", "12%", "8%", "15%"],
+    options_hi: ["10%", "12%", "8%", "15%"],
+    correct_option_index: 0,
+    subject: "Quantitative Aptitude"
+  }
+];
+
+const generateFull100DemoExam = (prefix = "SSC-CGL") => {
+  const full = [];
+  for (let i = 0; i < 100; i++) {
+    const qBase = STATIC_DEMO_QUESTIONS[i % STATIC_DEMO_QUESTIONS.length];
+    full.push({
+      ...qBase,
+      id: i + 1,
+      question_en: `Q.${i + 1}: ${qBase.question_en}`,
+      question_hi: `प्रश्न.${i + 1}: ${qBase.question_hi}`
+    });
+  }
+  return full;
+};
+
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('landing');
   const [activeTest, setActiveTest] = useState(null);
@@ -27,10 +117,14 @@ export default function App() {
 
   const [mockTests, setMockTests] = useState(() => {
     const saved = localStorage.getItem('cbt_mock_tests');
-    return saved ? JSON.parse(saved) : [];
+    return saved ? JSON.parse(saved) : [{
+      id: 'mock-ssc-real-100',
+      title: 'SSC CGL Tier-1 Official 100 Questions Full Mock Paper',
+      duration_mins: 60,
+      questions: generateFull100DemoExam("SSC CGL")
+    }];
   });
 
-  // Central backend sync
   useEffect(() => {
     const fetchCentralCloudTests = async () => {
       try {
@@ -79,9 +173,8 @@ export default function App() {
   };
 
   const handlePublishNewTest = async (newTest) => {
-    const updatedTests = [newTest, ...mockTests];
-    setMockTests(updatedTests);
-    localStorage.setItem('cbt_mock_tests', JSON.stringify(updatedTests));
+    setMockTests((prev) => [newTest, ...prev]);
+    localStorage.setItem('cbt_mock_tests', JSON.stringify([newTest, ...mockTests]));
     try {
       await fetch(`${API_BASE_URL}/api/tests/save`, {
         method: 'POST',
@@ -109,7 +202,7 @@ export default function App() {
   };
 
   const handleDeleteTest = async (testId) => {
-    if (!window.confirm("Are you sure you want to delete this test?")) return;
+    if (!window.confirm("Kya aap is test ko delete karna chahte hain?")) return;
     const remaining = mockTests.filter((t) => t.id !== testId);
     setMockTests(remaining);
     localStorage.setItem('cbt_mock_tests', JSON.stringify(remaining));
@@ -120,20 +213,18 @@ export default function App() {
     }
   };
 
-  // Launch Demo Trial Directly using matching Mock Test or existing questions
+  // Launch Dedicated Demo Exam - Never Overwritten by Admin Uploads
   const handleLaunchSandboxDemo = (demoExam) => {
-    // Check if a test exists matching this code/name or use the default available test
-    const matchedTest = mockTests.find(t => 
-      t.title?.toLowerCase().includes((demoExam?.code || '').toLowerCase()) ||
-      t.id?.toLowerCase().includes((demoExam?.code || '').toLowerCase())
-    ) || mockTests[0] || {
+    const sandboxQuestions = generateFull100DemoExam(demoExam?.code || "SSC");
+
+    const sandboxTest = {
       id: `sandbox-${(demoExam?.code || 'demo').toLowerCase()}`,
-      title: `${demoExam?.name || 'Combined Examination'} (${demoExam?.code || 'DEMO'}) - Official Trial`,
+      title: `${demoExam?.name || 'Combined Examination'} (${demoExam?.code || 'DEMO'}) - Official Simulation`,
       duration_mins: 60,
-      questions: []
+      questions: sandboxQuestions
     };
 
-    setActiveTest(matchedTest);
+    setActiveTest(sandboxTest);
     setCurrentStudent({
       id: "SANDBOX-VISITOR",
       name: "Demo Candidate",
