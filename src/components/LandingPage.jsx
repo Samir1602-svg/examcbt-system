@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 
-const API_BASE_URL = (process.env.REACT_APP_API_URL || 'https://examcbt-backend.onrender.com').replace(/\/$/, "");
-
 export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
   const [liveNews, setLiveNews] = useState([
     { tag: "GOVT EXAM", text: "Staff Selection Commission releases official CBT simulation advisory." },
@@ -11,18 +9,34 @@ export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
   ]);
 
   const [examCategories] = useState(() => {
-    return JSON.parse(localStorage.getItem('cbt_showcase_exams') || JSON.stringify([
+    const defaultList = [
       { code: "SSC-CGL", name: "Combined Graduate Level", pattern: "Tier-1 (100 Qs / 60 Min)", status: "Active Mock Matrix" },
       { code: "SSC-CHSL", name: "Combined Higher Secondary", pattern: "Tier-1 (100 Qs / 60 Min)", status: "Simulation Ready" },
-      { code: "RRB-NTPC", name: "Non-Technical Popular", pattern: "CBT-1 (100 Qs / 90 Min)", status: "TCS Engine Active" },
-      { code: "SSC-CPO", name: "Central Police Organization", pattern: "Paper-1 (200 Qs / 120 Min)", status: "Certified Setup" }
-    ]));
+      { code: "RRB-NTPC", name: "Non-Technical Popular", pattern: "CBT-1 (100 Qs / 60 Min)", status: "TCS Engine Active" },
+      { code: "SSC-CPO", name: "Central Police Organization", pattern: "Paper-1 (100 Qs / 60 Min)", status: "Certified Setup" }
+    ];
+
+    const raw = localStorage.getItem('cbt_showcase_exams');
+    if (!raw) return defaultList;
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed.map(item => ({
+        ...item,
+        pattern: item.pattern
+          ? item.pattern
+              .replace(/90\s*Min/gi, "60 Min")
+              .replace(/120\s*Min/gi, "60 Min")
+              .replace(/200\s*Qs/gi, "100 Qs")
+          : "Tier-1 (100 Qs / 60 Min)"
+      }));
+    } catch {
+      return defaultList;
+    }
   });
 
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [isFaqOpen, setIsFaqOpen] = useState(false);
   const [feedbackSuccess, setFeedbackSuccess] = useState(false);
-  const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [feedbackForm, setFeedbackForm] = useState({
     fullName: '',
     email: '',
@@ -30,7 +44,6 @@ export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
     feedback: ''
   });
 
-  // 11 Formal Official English FAQs
   const cbtFaqs = [
     {
       q: "1. Will my examination submit automatically once the countdown timer reaches zero?",
@@ -78,38 +91,21 @@ export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
     }
   ];
 
-  const handleFeedbackSubmit = async (e) => {
+  const handleFeedbackSubmit = (e) => {
     e.preventDefault();
     if (!feedbackForm.fullName || !feedbackForm.email || !feedbackForm.phone || !feedbackForm.feedback) {
       alert("Please complete all required fields before submission.");
       return;
     }
 
-    setSubmittingFeedback(true);
+    const existing = JSON.parse(localStorage.getItem('cbt_user_feedbacks') || '[]');
     const newEntry = {
       id: `fb-${Date.now()}`,
       ...feedbackForm,
-      status: "PENDING",
-      submittedAt: new Date().toLocaleString('en-IN')
+      submittedAt: new Date().toISOString()
     };
-
-    // 1. Local Storage Backup
-    const existing = JSON.parse(localStorage.getItem('cbt_user_feedbacks') || '[]');
     existing.unshift(newEntry);
     localStorage.setItem('cbt_user_feedbacks', JSON.stringify(existing));
-
-    // 2. Central Backend Sync
-    try {
-      await fetch(`${API_BASE_URL}/api/grievances/submit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newEntry)
-      });
-    } catch (err) {
-      console.warn("Backend grievance sync offline fallback:", err);
-    } finally {
-      setSubmittingFeedback(false);
-    }
 
     setFeedbackSuccess(true);
     setTimeout(() => {
@@ -248,7 +244,7 @@ export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
           </div>
         </div>
 
-        {/* Dynamic Sandbox Demo Exam Showcase */}
+        {/* Dynamic Sandbox Demo Exam Showcase (Now all set to 100 Qs / 60 Min) */}
         <div className="space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2">
             <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-300">Instant Sandbox Demo Examination Frameworks</h2>
@@ -308,10 +304,7 @@ export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
       {/* Official Visitor Support & Footer */}
       <footer className="border-t border-slate-800 bg-slate-950/90 pt-8 pb-6 px-4">
         <div className="max-w-6xl mx-auto space-y-6">
-          
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-6 border-b border-slate-900">
-            
-            {/* 1. Suggestion & Grievance Module */}
             <div 
               onClick={() => setIsFeedbackOpen(true)}
               className="bg-slate-900/80 border border-slate-800 hover:border-emerald-500/50 p-4 rounded-2xl cursor-pointer transition flex items-center gap-3 group"
@@ -325,7 +318,6 @@ export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
               </div>
             </div>
 
-            {/* 2. Official FAQ Hub */}
             <div 
               onClick={() => setIsFaqOpen(true)}
               className="bg-slate-900/80 border border-slate-800 hover:border-amber-500/50 p-4 rounded-2xl cursor-pointer transition flex items-center gap-3 group"
@@ -339,7 +331,6 @@ export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
               </div>
             </div>
 
-            {/* 3. Central Helpdesk (info.cbtexam@gmail.com) */}
             <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 text-lg shrink-0">
                 ✉️
@@ -355,7 +346,6 @@ export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
                 <span className="text-[10px] text-emerald-400 font-semibold block">Official Support TAT: Within 48 Hours</span>
               </div>
             </div>
-
           </div>
 
           <div className="text-center text-xs text-slate-500 font-medium">
@@ -364,7 +354,7 @@ export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
         </div>
       </footer>
 
-      {/* ================= MODAL 1: GRIEVANCE & FEEDBACK FORM ================= */}
+      {/* MODAL 1: GRIEVANCE & FEEDBACK FORM */}
       {isFeedbackOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-slate-900 border border-slate-800 max-w-md w-full rounded-3xl p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150">
@@ -441,10 +431,9 @@ export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
 
                 <button 
                   type="submit"
-                  disabled={submittingFeedback}
-                  className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-700 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-emerald-500/20 active:scale-95"
+                  className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-emerald-500/20 active:scale-95"
                 >
-                  {submittingFeedback ? 'Logging to Server...' : 'Submit Official Grievance →'}
+                  Submit Official Grievance →
                 </button>
               </form>
             )}
@@ -452,7 +441,7 @@ export default function LandingPage({ onOpenLoginModal, onLaunchSandboxDemo }) {
         </div>
       )}
 
-      {/* ================= MODAL 2: STANDALONE OFFICIAL FAQ HUB ================= */}
+      {/* MODAL 2: STANDALONE OFFICIAL FAQ HUB */}
       {isFaqOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-slate-900 border border-slate-800 max-w-3xl w-full max-h-[85vh] rounded-3xl p-6 shadow-2xl flex flex-col relative animate-in fade-in zoom-in-95 duration-150">
