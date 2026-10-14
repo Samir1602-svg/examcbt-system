@@ -1,7 +1,76 @@
 import React, { useEffect, useState } from 'react';
 
+// Lightweight Markdown (![alt](url)) and HTML (<img>) Parser for Results & Options
+function RenderFormattedContent({ content, onImageClick }) {
+  if (!content) return null;
+  if (typeof content !== 'string') return <span>{content}</span>;
+
+  const tokenRegex = /(!\[.*?\]\(.*?\)|<img\s+[^>]*src=["'][^"']+["'][^>]*\/?>)/gi;
+  const parts = content.split(tokenRegex);
+
+  return (
+    <span className="inline">
+      {parts.map((part, idx) => {
+        if (!part) return null;
+
+        // 1. Markdown Image: ![alt](url)
+        const mdMatch = part.match(/^!\[(.*?)\]\((.*?)\)$/);
+        if (mdMatch) {
+          const altText = mdMatch[1] || 'Figure';
+          const srcUrl = mdMatch[2];
+          return (
+            <span key={idx} className="block my-2">
+              <img
+                src={srcUrl}
+                alt={altText}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onImageClick && onImageClick(srcUrl, altText);
+                }}
+                className={`max-w-full h-auto max-h-56 object-contain rounded-lg border border-slate-700 p-1 bg-white mx-auto ${
+                  onImageClick ? 'cursor-zoom-in hover:opacity-90' : ''
+                } transition`}
+              />
+            </span>
+          );
+        }
+
+        // 2. Raw HTML <img> Tag
+        const htmlMatch = part.match(/<img\s+[^>]*src=["']([^"']+)["'][^>]*\/?>/i);
+        if (htmlMatch) {
+          const srcUrl = htmlMatch[1];
+          const altMatch = part.match(/alt=["']([^"']+)["']/i);
+          const altText = altMatch ? altMatch[1] : 'Figure';
+          return (
+            <span key={idx} className="block my-2">
+              <img
+                src={srcUrl}
+                alt={altText}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onImageClick && onImageClick(srcUrl, altText);
+                }}
+                className={`max-w-full h-auto max-h-56 object-contain rounded-lg border border-slate-700 p-1 bg-white mx-auto ${
+                  onImageClick ? 'cursor-zoom-in hover:opacity-90' : ''
+                } transition`}
+              />
+            </span>
+          );
+        }
+
+        // 3. Regular Text
+        return <span key={idx}>{part}</span>;
+      })}
+    </span>
+  );
+}
+
 export default function ExamResultAnalytics({ resultData, studentData, onReattempt, onGoToDashboard }) {
   const [filter, setFilter] = useState('all'); // 'all' | 'correct' | 'wrong' | 'unattempted'
+
+  // Image Zoom / Pop-up Preview Modal State
+  const [previewImage, setPreviewImage] = useState(null);
+  const [zoomScale, setZoomScale] = useState(1);
 
   // Safety exit fullscreen to prevent blackout / freeze
   useEffect(() => {
@@ -29,6 +98,16 @@ export default function ExamResultAnalytics({ resultData, studentData, onReattem
   const accuracy = (correct + wrong) > 0 ? Math.round((correct / (correct + wrong)) * 100) : 0;
   const candidateName = studentData?.name || "Verified Candidate";
   const candidateRoll = studentData?.id || "CBT-2026-0000";
+
+  const handleOpenImagePreview = (src, alt = 'Diagram Preview') => {
+    setPreviewImage({ src, alt });
+    setZoomScale(1);
+  };
+
+  const handleCloseImagePreview = () => {
+    setPreviewImage(null);
+    setZoomScale(1);
+  };
 
   // Filtered questions list
   const filteredQuestions = questions.filter((q, idx) => {
@@ -167,6 +246,10 @@ export default function ExamResultAnalytics({ resultData, studentData, onReattem
                 const isCorrect = userChoice !== undefined && userChoice === q.correct_option_index;
                 const isSkipped = userChoice === undefined;
 
+                // Flexible text resolver for Hindi / English / General questions
+                const questionText = q.question || q.question_en || q.question_hi || `Question ${originalQIndex + 1}`;
+                const optionsList = q.options || q.options_en || q.options_hi || [];
+
                 return (
                   <div
                     key={q.id || idx}
@@ -193,21 +276,30 @@ export default function ExamResultAnalytics({ resultData, studentData, onReattem
                       </span>
                     </div>
 
-                    {/* Question text */}
-                    <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-medium mb-3 whitespace-pre-line">
-                      {q.question_en}
-                    </p>
+                    {/* Question Statement with Markdown & HTML support */}
+                    <div className="text-xs sm:text-sm text-slate-200 leading-relaxed font-medium mb-3">
+                      <RenderFormattedContent
+                        content={questionText}
+                        onImageClick={handleOpenImagePreview}
+                      />
+                    </div>
 
                     {/* Diagram Display if exists */}
                     {q.image && (
-                      <div className="mb-3 max-w-sm border border-slate-700 rounded-lg p-2 bg-slate-900">
-                        <img src={q.image} alt="Question figure" className="max-h-48 object-contain rounded" />
+                      <div className="mb-3 max-w-sm border border-slate-700 rounded-xl p-2.5 bg-slate-900 flex flex-col items-center">
+                        <img
+                          src={q.image}
+                          alt={`Q.${originalQIndex + 1} Diagram`}
+                          onClick={() => handleOpenImagePreview(q.image, `Q.${originalQIndex + 1} Diagram`)}
+                          className="max-h-52 max-w-full object-contain rounded bg-white p-1 cursor-zoom-in hover:opacity-95 transition"
+                        />
+                        <span className="text-[10px] text-slate-500 mt-1 font-medium">🔍 Click diagram to zoom</span>
                       </div>
                     )}
 
-                    {/* Options Grid */}
+                    {/* Options Grid with Markdown & HTML Image Rendering */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      {(q.options_en || []).map((opt, optIdx) => {
+                      {optionsList.map((opt, optIdx) => {
                         const isThisCorrect = optIdx === q.correct_option_index;
                         const isThisSelected = userChoice === optIdx;
 
@@ -219,10 +311,20 @@ export default function ExamResultAnalytics({ resultData, studentData, onReattem
                         }
 
                         return (
-                          <div key={optIdx} className={`p-2.5 rounded-xl border flex items-center justify-between ${style}`}>
-                            <span>{String.fromCharCode(65 + optIdx)}. {opt}</span>
-                            {isThisCorrect && <span className="text-[10px] text-emerald-400 font-black">✓ Correct Key</span>}
-                            {isThisSelected && !isThisCorrect && <span className="text-[10px] text-rose-400 font-black">✗ Your Choice</span>}
+                          <div key={optIdx} className={`p-2.5 rounded-xl border flex items-start sm:items-center justify-between gap-2 ${style}`}>
+                            <div className="flex items-start sm:items-center gap-1.5 flex-1 overflow-hidden">
+                              <span className="font-mono font-bold shrink-0">{String.fromCharCode(65 + optIdx)}.</span>
+                              <div className="flex-1 overflow-hidden">
+                                <RenderFormattedContent
+                                  content={opt}
+                                  onImageClick={handleOpenImagePreview}
+                                />
+                              </div>
+                            </div>
+                            <div className="shrink-0 flex items-center">
+                              {isThisCorrect && <span className="text-[10px] text-emerald-400 font-black">✓ Correct Key</span>}
+                              {isThisSelected && !isThisCorrect && <span className="text-[10px] text-rose-400 font-black">✗ Your Choice</span>}
+                            </div>
                           </div>
                         );
                       })}
@@ -233,7 +335,64 @@ export default function ExamResultAnalytics({ resultData, studentData, onReattem
             </div>
           )}
         </div>
+
       </div>
+
+      {/* Pop-up Image Zoom & Preview Modal for Analytics */}
+      {previewImage && (
+        <div
+          onClick={handleCloseImagePreview}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-sm"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl"
+          >
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-100 border-b border-slate-200">
+              <span className="text-xs font-bold text-slate-700 truncate">{previewImage.alt}</span>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setZoomScale((z) => Math.max(0.5, z - 0.25))}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded text-xs font-bold text-slate-800 hover:bg-slate-50"
+                >
+                  −
+                </button>
+                <span className="text-xs font-mono font-bold text-slate-800 w-12 text-center">
+                  {Math.round(zoomScale * 100)}%
+                </span>
+                <button
+                  onClick={() => setZoomScale((z) => Math.min(3, z + 0.25))}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded text-xs font-bold text-slate-800 hover:bg-slate-50"
+                >
+                  +
+                </button>
+                <button
+                  onClick={() => setZoomScale(1)}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                >
+                  Reset
+                </button>
+                <button
+                  onClick={handleCloseImagePreview}
+                  className="ml-2 w-7 h-7 rounded-full bg-slate-800 text-white text-xs font-bold flex items-center justify-center hover:bg-slate-900"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto p-4 bg-slate-50 flex items-center justify-center touch-pan-x touch-pan-y">
+              <img
+                src={previewImage.src}
+                alt={previewImage.alt}
+                style={{ transform: `scale(${zoomScale})`, transformOrigin: 'center center' }}
+                className="max-w-full h-auto object-contain transition-transform duration-150"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
