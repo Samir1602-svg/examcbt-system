@@ -183,6 +183,61 @@ Crucial Formatting Rules:
     setEditingTest(updated);
   };
 
+  // Manual Diagram Upload, Clipboard Paste (Ctrl+V), Remove & Option Figure Helpers
+  const handleQuestionImageUpdate = (qIndex, base64Data) => {
+    const updated = { ...editingTest };
+    updated.questions[qIndex].image = base64Data;
+    setEditingTest(updated);
+  };
+
+  const handleQuestionImageFileChange = (qIndex, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      handleQuestionImageUpdate(qIndex, reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleQuestionImagePaste = (qIndex, e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1) {
+        e.preventDefault();
+        const blob = items[i].getAsFile();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          handleQuestionImageUpdate(qIndex, reader.result);
+        };
+        reader.readAsDataURL(blob);
+        break;
+      }
+    }
+  };
+
+  const handleSetStandardFigureOptions = (qIndex) => {
+    const updated = { ...editingTest };
+    const stdEn = ["Option 1", "Option 2", "Option 3", "Option 4"];
+    const stdHi = ["विकल्प 1", "विकल्प 2", "विकल्प 3", "विकल्प 4"];
+    updated.questions[qIndex].options = [...stdEn];
+    updated.questions[qIndex].options_en = [...stdEn];
+    updated.questions[qIndex].options_hi = [...stdHi];
+    setEditingTest(updated);
+  };
+
+  const handleOptionImageFileChange = (qIndex, optIndex, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const mdImg = `![Option ${optIndex + 1}](${reader.result})`;
+      handleOptionChange(qIndex, optIndex, mdImg);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleAddNewQuestion = () => {
     const updated = { ...editingTest };
     const newQ = {
@@ -676,18 +731,63 @@ Crucial Formatting Rules:
                   </div>
 
                   {editingTest.questions?.map((q, qIdx) => (
-                    <div key={qIdx} className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-3">
-                      <div className="flex justify-between items-center">
+                    <div
+                      key={qIdx}
+                      onPaste={(e) => handleQuestionImagePaste(qIdx, e)}
+                      className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-3 focus-within:border-emerald-500/40 transition"
+                    >
+                      <div className="flex flex-wrap justify-between items-center gap-2">
                         <span className="text-xs font-bold text-emerald-400">Q.{qIdx + 1}</span>
-                        <button onClick={() => handleDeleteQuestion(qIdx)} className="text-rose-400 text-xs font-bold">Remove</button>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSetStandardFigureOptions(qIdx)}
+                            className="bg-slate-900 hover:bg-slate-800 text-teal-400 border border-teal-500/30 px-2.5 py-1 rounded-lg text-[10px] font-bold transition"
+                            title="Reset options to Option 1, Option 2, Option 3, Option 4"
+                          >
+                            ⚡ Set Figure Options (1-4)
+                          </button>
+                          <label className="bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition">
+                            🖼️ {q.image ? "Replace Diagram" : "Upload Diagram"}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handleQuestionImageFileChange(qIdx, e)}
+                              className="hidden"
+                            />
+                          </label>
+                          {q.image && (
+                            <button
+                              type="button"
+                              onClick={() => handleQuestionImageUpdate(qIdx, null)}
+                              className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2 py-1 rounded-lg text-[10px] font-bold transition"
+                            >
+                              🗑️ Remove Diagram
+                            </button>
+                          )}
+                          <button onClick={() => handleDeleteQuestion(qIdx)} className="text-rose-400 text-xs font-bold pl-2">Remove Q</button>
+                        </div>
                       </div>
 
                       <textarea
                         rows={3}
                         value={q.question || q.question_hi || q.question_en}
                         onChange={(e) => handleQuestionTextChange(qIdx, e.target.value)}
+                        placeholder="Question text (Tip: You can also press Ctrl+V here to paste a snipped diagram image directly)"
                         className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
                       />
+
+                      {/* Question Diagram Preview & Paste Zone */}
+                      {q.image ? (
+                        <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col items-center space-y-2">
+                          <img src={q.image} alt={`Q.${qIdx + 1} Diagram`} className="max-h-48 object-contain rounded bg-white p-1" />
+                          <span className="text-[10px] text-slate-400">Tip: Click this question card and press Ctrl+V to replace with a new snipped screenshot</span>
+                        </div>
+                      ) : (
+                        <div className="border border-dashed border-slate-800 rounded-xl p-2 text-center text-[10px] text-slate-500">
+                          💡 Snipping Tool Tip: Take a screenshot (<kbd className="bg-slate-900 px-1 py-0.5 rounded text-slate-300">Win + Shift + S</kbd>), click anywhere on this question card, and press <kbd className="bg-slate-900 px-1 py-0.5 rounded text-slate-300">Ctrl + V</kbd> to attach diagram.
+                        </div>
+                      )}
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                         {(q.options || q.options_hi || q.options_en || []).map((opt, optIdx) => (
@@ -697,15 +797,27 @@ Crucial Formatting Rules:
                               name={`correct_${qIdx}`}
                               checked={q.correct_option_index === optIdx}
                               onChange={() => handleCorrectIndexChange(qIdx, optIdx)}
-                              className="accent-emerald-400 cursor-pointer"
+                              className="accent-emerald-400 cursor-pointer shrink-0"
                             />
-                            <span className="text-slate-400 font-bold">{String.fromCharCode(65 + optIdx)}:</span>
+                            <span className="text-slate-400 font-bold shrink-0">{String.fromCharCode(65 + optIdx)}:</span>
                             <input
                               type="text"
                               value={opt}
                               onChange={(e) => handleOptionChange(qIdx, optIdx, e.target.value)}
                               className="w-full bg-transparent outline-none text-slate-200 text-xs"
                             />
+                            <label
+                              className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded cursor-pointer shrink-0"
+                              title="Upload image for this option"
+                            >
+                              🖼️
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => handleOptionImageFileChange(qIdx, optIdx, e)}
+                                className="hidden"
+                              />
+                            </label>
                           </div>
                         ))}
                       </div>
