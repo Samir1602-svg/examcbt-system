@@ -1,5 +1,66 @@
 import React, { useState, useEffect } from 'react';
 
+// Markdown (![alt](url)) and HTML (<img>) Parser with Responsive Styling
+function RenderFormattedContent({ content, onImageClick }) {
+  if (!content) return null;
+  if (typeof content !== 'string') return <span>{content}</span>;
+
+  const tokenRegex = /(!\[.*?\]\(.*?\)|<img\s+[^>]*src=["'][^"']+["'][^>]*\/?>)/gi;
+  const parts = content.split(tokenRegex);
+
+  return (
+    <span className="inline">
+      {parts.map((part, idx) => {
+        if (!part) return null;
+
+        // 1. Markdown Image: ![alt](url)
+        const mdMatch = part.match(/^!\[(.*?)\]\((.*?)\)$/);
+        if (mdMatch) {
+          const altText = mdMatch[1] || 'Diagram';
+          const srcUrl = mdMatch[2];
+          return (
+            <span key={idx} className="block my-2">
+              <img
+                src={srcUrl}
+                alt={altText}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onImageClick(srcUrl, altText);
+                }}
+                className="max-w-full h-auto max-h-64 object-contain rounded-lg border border-slate-300 p-1 bg-white cursor-zoom-in hover:shadow-md transition mx-auto"
+              />
+            </span>
+          );
+        }
+
+        // 2. Raw HTML <img> Tag
+        const htmlMatch = part.match(/<img\s+[^>]*src=["']([^"']+)["'][^>]*\/?>/i);
+        if (htmlMatch) {
+          const srcUrl = htmlMatch[1];
+          const altMatch = part.match(/alt=["']([^"']+)["']/i);
+          const altText = altMatch ? altMatch[1] : 'Diagram';
+          return (
+            <span key={idx} className="block my-2">
+              <img
+                src={srcUrl}
+                alt={altText}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onImageClick(srcUrl, altText);
+                }}
+                className="max-w-full h-auto max-h-64 object-contain rounded-lg border border-slate-300 p-1 bg-white cursor-zoom-in hover:shadow-md transition mx-auto"
+              />
+            </span>
+          );
+        }
+
+        // 3. Regular Text
+        return <span key={idx}>{part}</span>;
+      })}
+    </span>
+  );
+}
+
 export default function CBTExamInterface({ testData, studentData, onFinishExam, onExitExam }) {
   const questions = testData?.questions || [];
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -8,6 +69,10 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
   const [language, setLanguage] = useState('en'); // 'en' for English, 'hi' for Hindi
   const [timeLeft, setTimeLeft] = useState((testData?.duration_mins || 60) * 60);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
+
+  // Image Zoom & Pop-up Preview Modal State
+  const [previewImage, setPreviewImage] = useState(null);
+  const [zoomScale, setZoomScale] = useState(1);
 
   // Candidate Photo Lookup
   const candidateRoll = studentData?.id || 'CBT-2026-0000';
@@ -52,6 +117,16 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
 
   const displayQuestionText = getDisplayQuestion();
   const displayOptions = getDisplayOptions();
+
+  const handleOpenImagePreview = (src, alt = 'Diagram Preview') => {
+    setPreviewImage({ src, alt });
+    setZoomScale(1);
+  };
+
+  const handleCloseImagePreview = () => {
+    setPreviewImage(null);
+    setZoomScale(1);
+  };
 
   const handleSelectOption = (optIdx) => {
     setSelectedAnswers((prev) => ({
@@ -180,23 +255,28 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
               </span>
             </div>
 
-            {/* Question Text */}
+            {/* Question Text (Supports Markdown & HTML Images) */}
             <div className="text-sm sm:text-base font-medium text-slate-900 leading-relaxed whitespace-pre-line font-sans">
-              {displayQuestionText}
+              <RenderFormattedContent
+                content={displayQuestionText}
+                onImageClick={handleOpenImagePreview}
+              />
             </div>
 
-            {/* Question Image/Diagram Canvas */}
+            {/* Question Image/Diagram Canvas (Responsive + Click to Zoom) */}
             {currentQ.image && (
-              <div className="my-3 border border-slate-300 rounded-xl p-3 bg-slate-50 max-w-2xl mx-auto shadow-inner flex justify-center">
+              <div className="my-3 border border-slate-300 rounded-xl p-3 bg-slate-50 max-w-2xl mx-auto shadow-inner flex flex-col items-center justify-center overflow-hidden">
                 <img
                   src={currentQ.image}
                   alt={`Question ${currentIdx + 1} Graphic`}
-                  className="max-h-72 object-contain rounded"
+                  onClick={() => handleOpenImagePreview(currentQ.image, `Question ${currentIdx + 1} Graphic`)}
+                  className="max-w-full h-auto max-h-72 object-contain rounded cursor-zoom-in hover:opacity-95 transition"
                 />
+                <span className="text-[10px] text-slate-500 mt-1.5 font-medium">🔍 Tap / Click diagram to zoom</span>
               </div>
             )}
 
-            {/* Options List */}
+            {/* Options List (Supports Markdown & HTML Images) */}
             <div className="space-y-2.5 pt-2 max-w-3xl">
               {displayOptions.map((opt, optIdx) => {
                 const isSelected = selectedAnswers[currentIdx] === optIdx;
@@ -213,12 +293,17 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
                       name={`question_${currentIdx}`}
                       checked={isSelected}
                       onChange={() => handleSelectOption(optIdx)}
-                      className="accent-[#245d8b] w-4 h-4 cursor-pointer"
+                      className="accent-[#245d8b] w-4 h-4 cursor-pointer shrink-0"
                     />
-                    <span className="text-xs sm:text-sm font-mono font-bold text-slate-500 mr-1">
+                    <span className="text-xs sm:text-sm font-mono font-bold text-slate-500 mr-1 shrink-0">
                       {String.fromCharCode(65 + optIdx)}.
                     </span>
-                    <span className="text-xs sm:text-sm">{opt}</span>
+                    <div className="text-xs sm:text-sm flex-1 overflow-hidden">
+                      <RenderFormattedContent
+                        content={opt}
+                        onImageClick={handleOpenImagePreview}
+                      />
+                    </div>
                   </label>
                 );
               })}
@@ -347,6 +432,61 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
         </div>
       </div>
 
+      {/* Pop-up Image Zoom & Preview Modal */}
+      {previewImage && (
+        <div
+          onClick={handleCloseImagePreview}
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-sm"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl"
+          >
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-100 border-b border-slate-200">
+              <span className="text-xs font-bold text-slate-700 truncate">{previewImage.alt}</span>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setZoomScale((z) => Math.max(0.5, z - 0.25))}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded text-xs font-bold hover:bg-slate-50"
+                >
+                  −
+                </button>
+                <span className="text-xs font-mono font-bold w-12 text-center">
+                  {Math.round(zoomScale * 100)}%
+                </span>
+                <button
+                  onClick={() => setZoomScale((z) => Math.min(3, z + 0.25))}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded text-xs font-bold hover:bg-slate-50"
+                >
+                  +
+                </button>
+                <button
+                  onClick={() => setZoomScale(1)}
+                  className="px-2.5 py-1 bg-white border border-slate-300 rounded text-xs font-semibold hover:bg-slate-50"
+                >
+                  Reset
+                </button>
+                <button
+                  onClick={handleCloseImagePreview}
+                  className="ml-2 w-7 h-7 rounded-full bg-slate-800 text-white text-xs font-bold flex items-center justify-center hover:bg-slate-900"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto p-4 bg-slate-50 flex items-center justify-center touch-pan-x touch-pan-y">
+              <img
+                src={previewImage.src}
+                alt={previewImage.alt}
+                style={{ transform: `scale(${zoomScale})`, transformOrigin: 'center center' }}
+                className="max-w-full h-auto object-contain transition-transform duration-150"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Final Submit Confirmation Modal */}
       {showSubmitModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
@@ -375,23 +515,4 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
             <div className="flex space-x-2 pt-2">
               <button
                 onClick={() => setShowSubmitModal(false)}
-                className="flex-1 py-2.5 border border-slate-300 text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-100"
-              >
-                Resume Test
-              </button>
-              <button
-                onClick={() => {
-                  setShowSubmitModal(false);
-                  handleFinalSubmission();
-                }}
-                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl text-xs shadow-md transition"
-              >
-                Yes, Submit Now
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+                className="flex-1 py-2.5 border border-slate-300 text-slate-700 font-bold rounded-xl text-xs hover:bg-
