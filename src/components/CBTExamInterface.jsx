@@ -515,4 +515,23 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
             <div className="flex space-x-2 pt-2">
               <button
                 onClick={() => setShowSubmitModal(false)}
-                className="flex-1 py-2.5 border border-slate-300 text-slate-700 font-bold rounded-xl text-xs hover:bg-
+                className="flex-1 py-2.5 border border-slate-300 text-slate-700 font-bold rounded-xl text-xs hover:bg-slate-100"
+              >
+                Resume Test
+              </button>
+              <button
+                onClick={() => {
+                  setShowSubmitModal(false);
+                  handleFinalSubmission();
+                }}
+                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl text-xs shadow-md transition"
+              >
+                Yes, Submit Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
