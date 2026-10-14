@@ -31,6 +31,7 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
   const [adminKey, setAdminKey] = useState('');
   
   const [errorMsg, setErrorMsg] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const evaluatePasswordStrength = (pwd) => {
     if (!pwd) return { label: 'None', color: 'bg-slate-800', score: 0 };
@@ -55,84 +56,99 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
   const handleCandidateSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
+    setIsSubmitting(true);
 
-    const savedStudents = JSON.parse(localStorage.getItem('cbt_students') || '[]');
-
-    if (isExistingUser) {
-      if (!loginIdentifier.trim() || !loginPassword.trim()) {
-        setErrorMsg("Please enter your registered Email/Phone and Password.");
-        return;
-      }
-
-      const cleanInput = loginIdentifier.trim().toLowerCase();
-      const existing = savedStudents.find(s => 
-        (s.email && s.email.toLowerCase() === cleanInput) || 
-        (s.phone && s.phone === cleanInput) ||
-        (s.id && s.id.toLowerCase() === cleanInput)
-      );
-
-      if (existing) {
-        if (existing.password && existing.password !== loginPassword) {
-          setErrorMsg("Authentication Failed: Incorrect password entered.");
+    try {
+      if (isExistingUser) {
+        if (!loginIdentifier.trim() || !loginPassword.trim()) {
+          setErrorMsg("Please enter your registered Email/Phone and Password.");
+          setIsSubmitting(false);
           return;
         }
 
-        // Attach permanently saved avatar if present in localStorage
-        const persistedPhoto = existing.avatar || localStorage.getItem(`cbt_photo_${existing.id}`);
-        const authenticatedCandidate = {
-          ...existing,
-          avatar: persistedPhoto || null
+        // Central Cloud API Call for Login Verification
+        const res = await fetch(`${API_BASE_URL}/api/students/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identifier: loginIdentifier.trim(),
+            password: loginPassword.trim()
+          })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.status === 'success' && data.student) {
+          const authenticatedCandidate = data.student;
+          localStorage.setItem('cbt_active_student', JSON.stringify(authenticatedCandidate));
+          onStudentLogin(authenticatedCandidate);
+        } else {
+          // Fallback to local storage check if backend offline
+          const savedStudents = JSON.parse(localStorage.getItem('cbt_students') || '[]');
+          const cleanInput = loginIdentifier.trim().toLowerCase();
+          const existing = savedStudents.find(s => 
+            (s.email && s.email.toLowerCase() === cleanInput) || 
+            (s.phone && s.phone === cleanInput) ||
+            (s.id && s.id.toLowerCase() === cleanInput)
+          );
+
+          if (existing && (!existing.password || existing.password === loginPassword.trim())) {
+            const authenticatedCandidate = { ...existing };
+            localStorage.setItem('cbt_active_student', JSON.stringify(authenticatedCandidate));
+            onStudentLogin(authenticatedCandidate);
+          } else {
+            setErrorMsg(data.message || "Authentication Failed: Incorrect credentials or account not found.");
+          }
+        }
+      } else {
+        if (!candidateName.trim() || !candidateEmail.trim() || !candidatePhone.trim() || !candidatePassword) {
+          setErrorMsg("All registration fields including Email, Phone and Password are mandatory.");
+          setIsSubmitting(false);
+          return;
+        }
+
+        if (pwdStrength.label === 'Weak') {
+          setErrorMsg("Weak Password Rejected: Please create a Medium or Strong password adhering to security guidelines.");
+          setIsSubmitting(false);
+          return;
+        }
+
+        const generatedRoll = `CBT-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+        
+        const newStudent = {
+          id: generatedRoll,
+          name: candidateName.trim(),
+          email: candidateEmail.trim(),
+          phone: candidatePhone.trim(),
+          password: candidatePassword,
+          avatar: null,
+          tier: "FREE",
+          createdAt: new Date().toLocaleDateString('en-IN')
         };
 
-        // Cache active session immediately
-        localStorage.setItem('cbt_active_student', JSON.stringify(authenticatedCandidate));
-        onStudentLogin(authenticatedCandidate);
-      } else {
-        setErrorMsg("No candidate account found matching this Email, Phone, or Roll ID.");
-      }
-    } else {
-      if (!candidateName.trim() || !candidateEmail.trim() || !candidatePhone.trim() || !candidatePassword) {
-        setErrorMsg("All registration fields including Email, Phone and Password are mandatory.");
-        return;
-      }
-
-      if (pwdStrength.label === 'Weak') {
-        setErrorMsg("Weak Password Rejected: Please create a Medium or Strong password adhering to security guidelines.");
-        return;
-      }
-
-      const generatedRoll = `CBT-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-      
-      const newStudent = {
-        id: generatedRoll,
-        name: candidateName.trim(),
-        email: candidateEmail.trim(),
-        phone: candidatePhone.trim(),
-        password: candidatePassword,
-        avatar: null,
-        tier: "FREE",
-        createdAt: new Date().toLocaleDateString('en-IN')
-      };
-
-      savedStudents.unshift(newStudent);
-      localStorage.setItem('cbt_students', JSON.stringify(savedStudents));
-      localStorage.setItem('cbt_active_student', JSON.stringify(newStudent));
-
-      try {
-        await fetch(`${API_BASE_URL}/api/students/register`, {
+        // 1. Central Cloud API Registration (Primary)
+        const res = await fetch(`${API_BASE_URL}/api/students/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newStudent),
         });
-      } catch (err) {
-        console.warn("Backend student sync offline fallback:", err);
-      }
 
-      onStudentLogin(newStudent);
+        // 2. Local Storage Sync (Offline resilience)
+        const savedStudents = JSON.parse(localStorage.getItem('cbt_students') || '[]');
+        savedStudents.unshift(newStudent);
+        localStorage.setItem('cbt_students', JSON.stringify(savedStudents));
+        localStorage.setItem('cbt_active_student', JSON.stringify(newStudent));
+
+        onStudentLogin(newStudent);
+      }
+    } catch (err) {
+      console.warn("Cloud authentication error, fallback active:", err);
+      setErrorMsg("Network error connecting to central server. Please verify your connection.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleVerifyCandidateIdentity = (e) => {
+  const handleVerifyCandidateIdentity = async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -141,6 +157,27 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
       return;
     }
 
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/students/verify-identity`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: recoveryIdentifier.trim(),
+          phone: recoveryPhone.trim()
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'success' && data.student) {
+        setMatchedCandidate(data.student);
+        setIsIdentityVerified(true);
+        setErrorMsg('');
+        return;
+      }
+    } catch (err) {
+      console.warn("Cloud verification fallback:", err);
+    }
+
+    // Local fallback
     const savedStudents = JSON.parse(localStorage.getItem('cbt_students') || '[]');
     const cleanIdent = recoveryIdentifier.trim().toLowerCase();
     const cleanPhone = recoveryPhone.trim();
@@ -180,16 +217,6 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
       return;
     }
 
-    const savedStudents = JSON.parse(localStorage.getItem('cbt_students') || '[]');
-    const updatedList = savedStudents.map(s => {
-      if (s.id === matchedCandidate.id) {
-        return { ...s, password: newPassword };
-      }
-      return s;
-    });
-
-    localStorage.setItem('cbt_students', JSON.stringify(updatedList));
-
     try {
       const updatedRecord = { ...matchedCandidate, password: newPassword };
       await fetch(`${API_BASE_URL}/api/students/register`, {
@@ -198,8 +225,17 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
         body: JSON.stringify(updatedRecord),
       });
     } catch (err) {
-      console.warn("Backend password update offline fallback:", err);
+      console.warn("Backend password update sync offline:", err);
     }
+
+    const savedStudents = JSON.parse(localStorage.getItem('cbt_students') || '[]');
+    const updatedList = savedStudents.map(s => {
+      if (s.id === matchedCandidate.id) {
+        return { ...s, password: newPassword };
+      }
+      return s;
+    });
+    localStorage.setItem('cbt_students', JSON.stringify(updatedList));
 
     setRecoverySuccessMsg("Password successfully reset! You can now log in with your updated credentials.");
     setTimeout(() => {
@@ -490,9 +526,6 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
                             <div className={`h-full flex-1 transition-all ${pwdStrength.score >= 2 ? pwdStrength.color : 'bg-slate-800'}`}></div>
                             <div className={`h-full flex-1 transition-all ${pwdStrength.score >= 3 ? pwdStrength.color : 'bg-slate-800'}`}></div>
                           </div>
-                          <p className="text-[10px] text-slate-500 leading-tight pt-1">
-                            Guidelines: Minimum 8 characters, include uppercase letters, numbers & special symbols. (Weak passwords are strictly rejected).
-                          </p>
                         </div>
                       </div>
                     </>
@@ -500,14 +533,14 @@ export default function AuthModal({ onClose, onStudentLogin, onAdminLogin }) {
 
                   <button
                     type="submit"
-                    disabled={!isExistingUser && pwdStrength.label === 'Weak'}
+                    disabled={isSubmitting || (!isExistingUser && pwdStrength.label === 'Weak')}
                     className={`w-full font-black py-3 rounded-xl text-xs sm:text-sm uppercase tracking-wider transition shadow-lg ${
                       !isExistingUser && pwdStrength.label === 'Weak' 
                         ? 'bg-slate-800 text-slate-500 cursor-not-allowed shadow-none' 
                         : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/10 active:scale-95'
                     }`}
                   >
-                    {isExistingUser ? 'Login & Access Examination Room →' : 'Complete Registration & Enter →'}
+                    {isSubmitting ? 'Processing Cloud Sync...' : (isExistingUser ? 'Login & Access Examination Room →' : 'Complete Registration & Enter →')}
                   </button>
                 </form>
               </>
