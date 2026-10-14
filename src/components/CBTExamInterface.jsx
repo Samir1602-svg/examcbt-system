@@ -5,12 +5,9 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState({});
   const [markedForReview, setMarkedForReview] = useState({});
-  const [language, setLanguage] = useState('English'); // 'English' or 'Hindi'
+  const [language, setLanguage] = useState('en'); // 'en' for English, 'hi' for Hindi
   const [timeLeft, setTimeLeft] = useState((testData?.duration_mins || 60) * 60);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
-
-  // Dynamic Translated Storage to cache Hindi version instantly
-  const [translatedCache, setTranslatedCache] = useState({});
 
   // Candidate Photo Lookup
   const candidateRoll = studentData?.id || 'CBT-2026-0000';
@@ -36,49 +33,21 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
 
   const currentQ = questions[currentIdx] || {};
 
-  // Instant Automatic Free Translation when question_hi is missing in parsed JSON
-  useEffect(() => {
-    if (language === 'Hindi' && !currentQ.question_hi && currentQ.question_en) {
-      const cacheKey = `q_${currentIdx}_hi`;
-      if (!translatedCache[cacheKey]) {
-        const textToTranslate = currentQ.question_en || currentQ.question;
-        fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=hi&dt=t&q=${encodeURIComponent(textToTranslate)}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data && data[0]) {
-              const fullTrans = data[0].map(item => item[0]).join('');
-              setTranslatedCache(prev => ({ ...prev, [cacheKey]: fullTrans }));
-            }
-          })
-          .catch(() => {});
-      }
-    }
-  }, [language, currentIdx, currentQ, translatedCache]);
-
-  // Resolve Real-Time Question Statement
+  // Bilingual Question Text Resolver
   const getDisplayQuestion = () => {
-    if (language === 'Hindi') {
-      if (currentQ.question_hi && currentQ.question_hi.trim() !== "" && currentQ.question_hi !== currentQ.question_en) {
-        return currentQ.question_hi;
-      }
-      const cacheKey = `q_${currentIdx}_hi`;
-      if (translatedCache[cacheKey]) {
-        return translatedCache[cacheKey];
-      }
-      return currentQ.question_en || currentQ.question || "प्रश्न उपलब्ध नहीं है।";
+    if (language === 'hi') {
+      return currentQ.question_hi || currentQ.question || currentQ.question_en || "प्रश्न उपलब्ध नहीं है।";
     }
-    return currentQ.question_en || currentQ.question || "Question text not available.";
+    return currentQ.question_en || currentQ.question || currentQ.question_hi || "Question text not available.";
   };
 
-  // Resolve Real-Time Options
+  // Bilingual Options Resolver
   const getDisplayOptions = () => {
-    const rawEn = currentQ.options_en || currentQ.options || ["Option A", "Option B", "Option C", "Option D"];
-    const rawHi = currentQ.options_hi;
-
-    if (language === 'Hindi' && Array.isArray(rawHi) && rawHi.length === rawEn.length) {
-      return rawHi;
+    if (language === 'hi') {
+      const optsHi = currentQ.options_hi || currentQ.options;
+      if (Array.isArray(optsHi) && optsHi.length > 0) return optsHi;
     }
-    return rawEn;
+    return currentQ.options_en || currentQ.options || ["Option A", "Option B", "Option C", "Option D"];
   };
 
   const displayQuestionText = getDisplayQuestion();
@@ -181,7 +150,7 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
             <span className="font-mono text-sm sm:text-lg font-bold leading-tight">{formatTimer(timeLeft)}</span>
           </div>
 
-          {/* Bilingual Toggle Dropdown */}
+          {/* Bilingual Switcher Dropdown */}
           <div className="flex items-center space-x-1.5 text-xs">
             <span className="hidden sm:inline text-slate-200 font-semibold">View in:</span>
             <select
@@ -189,8 +158,8 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
               onChange={(e) => setLanguage(e.target.value)}
               className="bg-white text-slate-800 rounded px-2 py-1 font-bold text-xs outline-none cursor-pointer shadow-sm"
             >
-              <option value="English">English</option>
-              <option value="Hindi">हिन्दी (Hindi)</option>
+              <option value="en">English</option>
+              <option value="hi">हिन्दी (Hindi)</option>
             </select>
           </div>
         </div>
@@ -212,11 +181,11 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
             </div>
 
             {/* Question Text */}
-            <div className="text-sm sm:text-base font-medium text-slate-900 leading-relaxed whitespace-pre-line">
+            <div className="text-sm sm:text-base font-medium text-slate-900 leading-relaxed whitespace-pre-line font-sans">
               {displayQuestionText}
             </div>
 
-            {/* Question Image/Diagram */}
+            {/* Question Image/Diagram Canvas */}
             {currentQ.image && (
               <div className="my-3 border border-slate-300 rounded-xl p-3 bg-slate-50 max-w-2xl mx-auto shadow-inner flex justify-center">
                 <img
@@ -256,7 +225,7 @@ export default function CBTExamInterface({ testData, studentData, onFinishExam, 
             </div>
           </div>
 
-          {/* Footer Buttons */}
+          {/* Action Buttons */}
           <div className="mt-8 pt-4 border-t border-slate-200 flex flex-wrap gap-2 justify-between items-center bg-slate-50 p-2.5 rounded-xl">
             <div className="flex gap-2">
               <button
