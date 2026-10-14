@@ -206,7 +206,7 @@ Crucial Formatting Rules:
     alert(`Success: "${editingTest.title}" has been updated successfully.`);
   };
 
-  // Robust Fault-Tolerant JSON Sanitizer (Handles unescaped inner quotes, curly quotes, and trailing commas)
+  // Auto-Repairing and Fault-Tolerant JSON Parser
   const sanitizeAndParseJSON = (rawStr) => {
     let clean = rawStr.trim();
     if (clean.startsWith("```json")) clean = clean.slice(7);
@@ -214,17 +214,26 @@ Crucial Formatting Rules:
     if (clean.endsWith("```")) clean = clean.slice(0, -3);
     clean = clean.trim();
 
-    // Replace curly / smart quotes with standard ASCII quotation marks
+    // Auto-fix missing array square brackets if user pasted objects directly
+    if (!clean.startsWith("[") && clean.endsWith("]")) {
+      clean = "[" + clean;
+    } else if (clean.startsWith("[") && !clean.endsWith("]")) {
+      clean = clean + "]";
+    } else if (!clean.startsWith("[") && !clean.endsWith("]")) {
+      clean = "[" + clean + "]";
+    }
+
+    // Replace unicode/smart curly quotes with standard double/single quotes
     clean = clean.replace(/[\u201C\u201D]/g, '"');
     clean = clean.replace(/[\u2018\u2019]/g, "'");
 
-    // Remove trailing commas before closing braces/brackets
+    // Remove any trailing commas before closing braces or brackets
     clean = clean.replace(/,\s*([\]}])/g, '$1');
 
     try {
       return JSON.parse(clean);
     } catch (e1) {
-      // Auto-escape unescaped inner quotes in string values
+      // Auto-repair unescaped inner quotes inside question text strings
       try {
         const sanitized = clean.replace(/("(?:question|subject)":\s*")([\s\S]*?)("(?=,\s*"\w+":|\s*}))/g, (match, prefix, content, suffix) => {
           const safeContent = content.replace(/(?<!\\)"/g, '\\"');
@@ -285,7 +294,7 @@ Crucial Formatting Rules:
       setActiveTab('live_tests');
       alert(`Success: "${newMock.title}" containing ${newMock.questions.length} questions has been successfully published.`);
     } catch (e) {
-      alert("JSON Syntax Error: Please ensure your input is a valid JSON array starting with '[' and ending with ']'. Ensure quotes are properly formatted.");
+      alert("JSON Syntax Error: Please ensure your input is a valid JSON array. The system automatically handles bracket wrappers and internal quotes.");
     }
   };
 
