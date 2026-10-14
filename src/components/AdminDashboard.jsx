@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 const API_BASE_URL = (process.env.REACT_APP_API_URL || 'https://examcbt-backend.onrender.com').replace(/\/$/, "");
 
 export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, onDeleteTest, onBackToHome, existingTests = [] }) {
-  const [activeTab, setActiveTab] = useState('grievances'); // Default open grievances desk
+  const [activeTab, setActiveTab] = useState('pdf');
   const [uploadMethod, setUploadMethod] = useState('gemini_json');
   
   const [testTitle, setTestTitle] = useState('');
@@ -14,16 +14,15 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   const [uploading, setUploading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [registeredStudents, setRegisteredStudents] = useState([]);
-  const [copiedPrompt, setCopiedPrompt] = useState(false);
 
-  // Directorate Circulars Management States
+  // Directorate Circulars Management
   const [circulars, setCirculars] = useState(() => {
     return JSON.parse(localStorage.getItem('cbt_directorate_circulars') || '[]');
   });
   const [circularTitle, setCircularTitle] = useState('');
   const [circularFile, setCircularFile] = useState(null);
 
-  // Public Trial & Demo Showcase Management States
+  // Showcase Exams
   const [showcaseExams, setShowcaseExams] = useState(() => {
     return JSON.parse(localStorage.getItem('cbt_showcase_exams') || JSON.stringify([
       { code: "SSC-CGL", name: "Combined Graduate Level", pattern: "Tier-1 (100 Qs / 60 Min)", status: "Active Mock Matrix" },
@@ -43,25 +42,6 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   // Selected Test for Editing
   const [selectedTestId, setSelectedTestId] = useState(null);
   const [editingTest, setEditingTest] = useState(null);
-
-  const geminiPromptText = `Please analyze this attached SSC/TCS official question paper PDF and extract all questions into the exact JSON format below. Do not write any explanations, markdown notes or text outside the JSON array:
-
-[
-  {
-    "question": "Exact question text in English or Hindi",
-    "options": ["Option 1 text", "Option 2 text", "Option 3 text", "Option 4 text"],
-    "correct_option_index": 0,
-    "subject": "General Studies"
-  }
-]
-
-Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 3, or 3 for Option 4 based on the green tick or chosen/correct answer indicated in the answer key.`;
-
-  const handleCopyPrompt = () => {
-    navigator.clipboard.writeText(geminiPromptText);
-    setCopiedPrompt(true);
-    setTimeout(() => setCopiedPrompt(false), 3000);
-  };
 
   const fetchStudents = async () => {
     let combined = [];
@@ -87,7 +67,6 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
     setRegisteredStudents(combined);
   };
 
-  // Fetch Grievances from Cloud Backend + Local Storage
   const fetchGrievances = async () => {
     let list = [];
     try {
@@ -102,7 +81,6 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
       console.warn("Could not fetch remote grievances:", e);
     }
 
-    // Merge with LocalStorage
     const local = JSON.parse(localStorage.getItem('cbt_user_feedbacks') || '[]');
     local.forEach(locItem => {
       if (!list.some(g => g.id === locItem.id)) {
@@ -142,94 +120,25 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
     }
   };
 
-  const handleRevokeStudent = (studentId) => {
-    if (window.confirm("Are you sure you want to permanently revoke and remove this student from the portal?")) {
-      const updatedList = registeredStudents.filter(s => s.id !== studentId);
-      setRegisteredStudents(updatedList);
-      localStorage.setItem('cbt_students', JSON.stringify(updatedList));
-      alert("Student access successfully revoked and record removed.");
-    }
-  };
-
-  const handlePublishCircular = (e) => {
-    e.preventDefault();
-    if (!circularTitle.trim()) {
-      alert("Kripya circular ka title enter karein!");
-      return;
-    }
-
-    const newCircular = {
-      id: `circ-${Date.now()}`,
-      title: circularTitle.trim(),
-      fileName: circularFile ? circularFile.name : "Official_Directorate_Circular.pdf",
-      date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-      link: "#"
-    };
-
-    const updatedCirculars = [newCircular, ...circulars];
-    setCirculars(updatedCirculars);
-    localStorage.setItem('cbt_directorate_circulars', JSON.stringify(updatedCirculars));
-    setCircularTitle('');
-    setCircularFile(null);
-    alert("Directorate circular successfully published to portal announcements!");
-  };
-
-  const handleDeleteCircular = (circId) => {
-    if (window.confirm("Are you sure you want to delete this circular?")) {
-      const updated = circulars.filter(c => c.id !== circId);
-      setCirculars(updated);
-      localStorage.setItem('cbt_directorate_circulars', JSON.stringify(updated));
-    }
-  };
-
-  const handleAddShowcaseExam = (e) => {
-    e.preventDefault();
-    if (!newShowcaseCode.trim() || !newShowcaseName.trim()) {
-      alert("Kripya Exam Code aur Name enter karein!");
-      return;
-    }
-
-    const newExam = {
-      code: newShowcaseCode.trim().toUpperCase(),
-      name: newShowcaseName.trim(),
-      pattern: newShowcasePattern.trim() || "Tier-1 (100 Qs / 60 Min)",
-      status: newShowcaseStatus
-    };
-
-    const updated = [newExam, ...showcaseExams];
-    setShowcaseExams(updated);
-    localStorage.setItem('cbt_showcase_exams', JSON.stringify(updated));
-    setNewShowcaseCode('');
-    setNewShowcaseName('');
-    setNewShowcasePattern('');
-    alert("Demo showcase exam successfully added to landing page!");
-  };
-
-  const handleDeleteShowcaseExam = (index) => {
-    if (window.confirm("Are you sure you want to remove this exam from the landing showcase?")) {
-      const updated = showcaseExams.filter((_, idx) => idx !== index);
-      setShowcaseExams(updated);
-      localStorage.setItem('cbt_showcase_exams', JSON.stringify(updated));
-    }
-  };
-
   const handleSelectTestToEdit = (test) => {
     setSelectedTestId(test.id);
     setEditingTest(JSON.parse(JSON.stringify(test)));
   };
 
-  const handleQuestionTextChange = (qIndex, field, value) => {
+  const handleQuestionTextChange = (qIndex, value) => {
     const updated = { ...editingTest };
-    updated.questions[qIndex][field] = value;
+    updated.questions[qIndex].question = value;
+    updated.questions[qIndex].question_en = value;
+    updated.questions[qIndex].question_hi = value;
     setEditingTest(updated);
   };
 
   const handleOptionChange = (qIndex, optIndex, value) => {
     const updated = { ...editingTest };
-    updated.questions[qIndex].options_en[optIndex] = value;
-    if (updated.questions[qIndex].options_hi) {
-      updated.questions[qIndex].options_hi[optIndex] = value;
-    }
+    if (!updated.questions[qIndex].options) updated.questions[qIndex].options = [];
+    updated.questions[qIndex].options[optIndex] = value;
+    if (updated.questions[qIndex].options_en) updated.questions[qIndex].options_en[optIndex] = value;
+    if (updated.questions[qIndex].options_hi) updated.questions[qIndex].options_hi[optIndex] = value;
     setEditingTest(updated);
   };
 
@@ -249,8 +158,10 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
     const updated = { ...editingTest };
     const newQ = {
       id: updated.questions.length + 1,
-      question_en: "New Question Statement",
+      question: "नया प्रश्न / New Question",
+      question_en: "New Question",
       question_hi: "नया प्रश्न",
+      options: ["विकल्प 1", "विकल्प 2", "विकल्प 3", "विकल्प 4"],
       options_en: ["Option 1", "Option 2", "Option 3", "Option 4"],
       options_hi: ["विकल्प 1", "विकल्प 2", "विकल्प 3", "विकल्प 4"],
       correct_option_index: 0,
@@ -266,63 +177,96 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
     alert(`✓ "${editingTest.title}" updated successfully!`);
   };
 
+  // Robust Fault-Tolerant JSON Parser (Cleans smart quotes, inner quotes & trailing commas)
+  const sanitizeAndParseJSON = (rawStr) => {
+    let clean = rawStr.trim();
+    if (clean.startsWith("```json")) clean = clean.slice(7);
+    if (clean.startsWith("```")) clean = clean.slice(3);
+    if (clean.endsWith("```")) clean = clean.slice(0, -3);
+    clean = clean.trim();
+
+    // Replace curly/smart quotes with standard quotes
+    clean = clean.replace(/[\u201C\u201D]/g, '"');
+    clean = clean.replace(/[\u2018\u2019]/g, "'");
+
+    // Remove trailing commas before closing braces/brackets
+    clean = clean.replace(/,\s*([\]}])/g, '$1');
+
+    try {
+      return JSON.parse(clean);
+    } catch (e1) {
+      // Fallback: fix unescaped double quotes inside strings
+      try {
+        const fixedStr = clean.replace(/:\s*"([^"]*)"/g, (match, p1) => {
+          return ': "' + p1.replace(/"/g, '\\"') + '"';
+        });
+        return JSON.parse(fixedStr);
+      } catch (e2) {
+        throw new Error("JSON Parse Error");
+      }
+    }
+  };
+
   const handleGeminiJsonImport = () => {
     if (!testTitle.trim()) {
-      alert("Kripya Test Title dalein!");
+      alert("Kripya Test Title enter karein!");
       return;
     }
     if (!jsonInput.trim()) {
-      alert("Kripya Gemini ka JSON data paste karein!");
+      alert("Kripya JSON data paste karein!");
       return;
     }
 
     try {
-      let clean = jsonInput.trim();
-      if (clean.startsWith("```json")) clean = clean.slice(7);
-      if (clean.startsWith("```")) clean = clean.slice(3);
-      if (clean.endsWith("```")) clean = clean.slice(0, -3);
-
-      const parsed = JSON.parse(clean.trim());
+      const parsed = sanitizeAndParseJSON(jsonInput);
       const qList = Array.isArray(parsed) ? parsed : (parsed.questions || []);
 
       if (qList.length === 0) {
-        throw new Error("No valid questions found");
+        throw new Error("No valid questions found in array");
       }
 
       const newMock = {
         id: `mock-${Date.now()}`,
-        title: testTitle,
+        title: testTitle.trim(),
         duration_mins: parseInt(duration) || 60,
-        questions: qList.map((q, idx) => ({
-          id: idx + 1,
-          question_en: q.question || q.question_en || `Question ${idx + 1}`,
-          question_hi: q.question_hi || q.question || q.question_en,
-          image: q.image || null,
-          options_en: q.options || q.options_en || ['Option A', 'Option B', 'Option C', 'Option D'],
-          options_hi: q.options_hi || q.options || q.options_en,
-          correct_option_index: typeof q.correct_option_index === 'number' ? q.correct_option_index : 0,
-          subject: q.subject || 'SSC CGL Examination'
-        }))
+        questions: qList.map((q, idx) => {
+          const mainText = q.question || q.question_hi || q.question_en || `Question ${idx + 1}`;
+          const optionsArr = q.options || q.options_hi || q.options_en || ['Option 1', 'Option 2', 'Option 3', 'Option 4'];
+          
+          return {
+            id: idx + 1,
+            question: mainText,
+            question_hi: q.question_hi || mainText,
+            question_en: q.question_en || mainText,
+            image: q.image || null,
+            options: optionsArr,
+            options_hi: q.options_hi || optionsArr,
+            options_en: q.options_en || optionsArr,
+            correct_option_index: typeof q.correct_option_index === 'number' ? q.correct_option_index : 0,
+            subject: q.subject || 'Standard Examination Paper'
+          };
+        })
       };
 
       onPublishTest(newMock);
-      setStatusMessage(`✓ Success! ${newMock.questions.length} Questions imported cleanly via AI.`);
+      setStatusMessage(`✓ Success! ${newMock.questions.length} questions imported cleanly.`);
       setTestTitle('');
       setJsonInput('');
       setActiveTab('live_tests');
+      alert(`✓ Success! "${newMock.title}" with ${newMock.questions.length} questions has been successfully published.`);
     } catch (e) {
-      alert("Invalid JSON format! Kripya Gemini se generated valid JSON paste karein.");
+      alert("Invalid JSON format! Kripya check karein ki JSON array '[ ... ]' se shuru aur band ho raha hai aur quotes sahi hain.");
     }
   };
 
   const handlePdfUpload = async () => {
     if (!pdfFile || !testTitle) {
-      alert("Kripya Test Title aur PDF file dono select karein!");
+      alert("Kripya Test Title aur PDF file select karein!");
       return;
     }
 
     setUploading(true);
-    setStatusMessage('Uploading to Backend & parsing questions...');
+    setStatusMessage('Uploading to Backend & parsing...');
 
     const formData = new FormData();
     formData.append('file', pdfFile);
@@ -341,13 +285,15 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
 
         const newMockTest = {
           id: `mock-${Date.now()}`,
-          title: testTitle,
+          title: testTitle.trim(),
           duration_mins: parseInt(duration) || 60,
           questions: generatedQuestions.map((q, idx) => ({
             id: idx + 1,
+            question: q.question_en,
             question_en: q.question_en,
             question_hi: q.question_hi || q.question_en,
             image: q.image || null,
+            options: q.options_en || ['Option 1', 'Option 2', 'Option 3', 'Option 4'],
             options_en: q.options_en || ['Option 1', 'Option 2', 'Option 3', 'Option 4'],
             options_hi: q.options_hi || q.options_en,
             correct_option_index: q.correct_option_index || 0,
@@ -356,17 +302,74 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
         };
 
         onPublishTest(newMockTest);
-        setStatusMessage(`✓ Success! ${newMockTest.questions.length} Questions parsed and synced!`);
         setTestTitle('');
         setPdfFile(null);
         setActiveTab('live_tests');
-      } else {
-        setStatusMessage('Error parsing questions. Try the "Gemini AI JSON" method.');
+        alert(`✓ Success! "${newMockTest.title}" published with ${newMockTest.questions.length} questions.`);
       }
     } catch (err) {
-      setStatusMessage(`Backend connection timed out. Tip: Use "Gemini AI JSON Importer" above for 100% instant sync!`);
+      setStatusMessage(`PDF font error. Please use "AI / JSON" tab for Hindi Unicode papers.`);
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleAddShowcaseExam = (e) => {
+    e.preventDefault();
+    if (!newShowcaseCode.trim() || !newShowcaseName.trim()) return;
+
+    const newExam = {
+      code: newShowcaseCode.trim().toUpperCase(),
+      name: newShowcaseName.trim(),
+      pattern: newShowcasePattern.trim() || "Tier-1 (100 Qs / 60 Min)",
+      status: newShowcaseStatus
+    };
+
+    const updated = [newExam, ...showcaseExams];
+    setShowcaseExams(updated);
+    localStorage.setItem('cbt_showcase_exams', JSON.stringify(updated));
+    setNewShowcaseCode('');
+    setNewShowcaseName('');
+    setNewShowcasePattern('');
+  };
+
+  const handleDeleteShowcaseExam = (index) => {
+    if (window.confirm("Remove this showcase exam?")) {
+      const updated = showcaseExams.filter((_, idx) => idx !== index);
+      setShowcaseExams(updated);
+      localStorage.setItem('cbt_showcase_exams', JSON.stringify(updated));
+    }
+  };
+
+  const handlePublishCircular = (e) => {
+    e.preventDefault();
+    if (!circularTitle.trim()) return;
+
+    const newCircular = {
+      id: `circ-${Date.now()}`,
+      title: circularTitle.trim(),
+      fileName: circularFile ? circularFile.name : "Circular.pdf",
+      date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    };
+
+    const updated = [newCircular, ...circulars];
+    setCirculars(updated);
+    localStorage.setItem('cbt_directorate_circulars', JSON.stringify(updated));
+    setCircularTitle('');
+    setCircularFile(null);
+  };
+
+  const handleDeleteCircular = (circId) => {
+    const updated = circulars.filter(c => c.id !== circId);
+    setCirculars(updated);
+    localStorage.setItem('cbt_directorate_circulars', JSON.stringify(updated));
+  };
+
+  const handleRevokeStudent = (studentId) => {
+    if (window.confirm("Revoke this candidate?")) {
+      const updated = registeredStudents.filter(s => s.id !== studentId);
+      setRegisteredStudents(updated);
+      localStorage.setItem('cbt_students', JSON.stringify(updated));
     }
   };
 
@@ -375,6 +378,7 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 sm:p-6 font-sans">
       <div className="max-w-6xl mx-auto space-y-6">
+        
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-4">
           <div>
@@ -385,7 +389,7 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
           </div>
           <button
             onClick={onBackToHome}
-            className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-xs px-4 py-2 rounded-xl font-bold transition self-end sm:self-auto"
+            className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-xs px-4 py-2 rounded-xl font-bold transition"
           >
             ← Back to Student Dashboard
           </button>
@@ -396,7 +400,7 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
           <div onClick={() => setActiveTab('grievances')} className="bg-slate-900 border border-slate-800 hover:border-rose-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Support Grievances</span>
             <div className="text-2xl sm:text-3xl font-black text-rose-400 mt-1">{pendingCount} <span className="text-xs text-slate-500 font-normal">Pending</span></div>
-            <span className="text-[10px] text-rose-400 font-bold block mt-1">Resolve candidate tickets →</span>
+            <span className="text-[10px] text-rose-400 font-bold block mt-1">Resolve tickets →</span>
           </div>
           <div onClick={() => setActiveTab('students')} className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Total Registered</span>
@@ -420,8 +424,20 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
           </div>
         </div>
 
-        {/* Tab Header (6 Complete Tabs) */}
+        {/* Tab Header */}
         <div className="flex space-x-2 border-b border-slate-800 pb-2 overflow-x-auto no-scrollbar">
+          <button
+            onClick={() => setActiveTab('pdf')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'pdf' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
+          >
+            ⚡ Add / Import New Paper
+          </button>
+          <button
+            onClick={() => setActiveTab('live_tests')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'live_tests' ? 'bg-emerald-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
+          >
+            📝 Manage Live Tests ({existingTests.length})
+          </button>
           <button
             onClick={() => { setActiveTab('grievances'); fetchGrievances(); }}
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'grievances' ? 'bg-rose-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
@@ -433,18 +449,6 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'showcase' ? 'bg-teal-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
           >
             🎯 Public Demo Showcase ({showcaseExams.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('live_tests')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'live_tests' ? 'bg-emerald-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
-          >
-            📝 Manage Live Tests ({existingTests.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('pdf')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'pdf' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
-          >
-            ⚡ Add / Import New Paper
           </button>
           <button
             onClick={() => setActiveTab('circulars')}
@@ -460,288 +464,7 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
           </button>
         </div>
 
-        {/* TAB 0: CANDIDATE GRIEVANCES & FEEDBACK RESOLUTION DESK */}
-        {activeTab === 'grievances' && (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-            <div className="p-4 border-b border-slate-800 flex justify-between items-center">
-              <div>
-                <h3 className="font-bold text-sm text-slate-200">Candidate Grievances & Resolution Desk</h3>
-                <p className="text-[11px] text-slate-400 mt-0.5">Tickets submitted via the public feedback form. Official response TAT: within 48 hours.</p>
-              </div>
-              <div className="flex items-center space-x-3">
-                <button
-                  onClick={fetchGrievances}
-                  className="text-xs bg-slate-800 hover:bg-slate-700 text-rose-400 font-bold px-3 py-1.5 rounded-lg border border-slate-700 transition"
-                >
-                  ↻ Refresh Tickets
-                </button>
-                <span className="text-xs text-slate-400">Total: {grievances.length}</span>
-              </div>
-            </div>
-
-            {grievances.length === 0 ? (
-              <div className="p-10 text-center text-slate-500 text-xs">
-                No candidate grievances logged yet. Form submissions will appear here live.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
-                    <tr>
-                      <th className="p-3">Received Time</th>
-                      <th className="p-3">Candidate Details</th>
-                      <th className="p-3 w-2/5">Grievance / Message</th>
-                      <th className="p-3">Status</th>
-                      <th className="p-3 text-right">Director Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {grievances.map((item) => (
-                      <tr key={item.id} className="hover:bg-slate-800/40">
-                        <td className="p-3 text-slate-400 whitespace-nowrap font-mono text-[11px]">
-                          {item.submittedAt || 'N/A'}
-                        </td>
-                        <td className="p-3">
-                          <div className="font-bold text-white text-xs">{item.fullName}</div>
-                          <div className="text-slate-400 text-[11px]">{item.email}</div>
-                          <div className="text-slate-500 font-mono text-[10px]">{item.phone}</div>
-                        </td>
-                        <td className="p-3 text-slate-200 leading-relaxed select-text">
-                          <div className="bg-slate-950 border border-slate-800/80 p-2.5 rounded-xl text-xs max-h-32 overflow-y-auto whitespace-pre-wrap">
-                            {item.feedback}
-                          </div>
-                        </td>
-                        <td className="p-3 whitespace-nowrap">
-                          {item.status === 'RESOLVED' ? (
-                            <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-                              ✓ RESOLVED
-                            </span>
-                          ) : (
-                            <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold animate-pulse">
-                              ● PENDING
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3 text-right whitespace-nowrap space-x-2">
-                          <a
-                            href={`mailto:${item.email}?subject=Regarding your CBT Grievance Reference ${item.id}&body=Dear ${item.fullName},%0D%0A%0D%0ARegarding your submitted query:%0D%0A"${encodeURIComponent(item.feedback)}"%0D%0A%0D%0AFrom Directorate Support Desk`}
-                            className="inline-block bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/30 px-2.5 py-1.5 rounded-xl font-bold transition text-[11px]"
-                            title="Reply to candidate via email"
-                          >
-                            ✉️ Reply
-                          </a>
-                          {item.status !== 'RESOLVED' && (
-                            <button
-                              onClick={() => handleResolveGrievance(item.id)}
-                              className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 px-2.5 py-1.5 rounded-xl font-bold transition text-[11px]"
-                            >
-                              ✓ Resolve
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleDeleteGrievance(item.id)}
-                            className="bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 px-2.5 py-1.5 rounded-xl font-bold transition text-[11px]"
-                          >
-                            🗑️
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 1: PUBLIC TRIAL SHOWCASE EXAMS (Point 10 CRUD Manager) */}
-        {activeTab === 'showcase' && (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-xl">
-            <div>
-              <span className="text-[10px] font-mono font-bold text-teal-400 bg-teal-500/10 border border-teal-500/30 px-2 py-0.5 rounded">
-                Public Landing Frameworks
-              </span>
-              <h3 className="text-lg font-black text-white mt-2">Manage Featured Trial & Demo Exams</h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Add, edit, or delete demo exams shown on the public landing page. These changes sync directly with the landing page showcase cards.
-              </p>
-            </div>
-
-            <form onSubmit={handleAddShowcaseExam} className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-950 p-4 rounded-2xl border border-slate-800">
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">Exam Code *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. SSC-CGL"
-                  value={newShowcaseCode}
-                  onChange={(e) => setNewShowcaseCode(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs uppercase font-mono text-white outline-none focus:border-teal-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">Exam Full Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Combined Graduate Level"
-                  value={newShowcaseName}
-                  onChange={(e) => setNewShowcaseName(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">Pattern Details</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Tier-1 (100 Qs / 60 Min)"
-                  value={newShowcasePattern}
-                  onChange={(e) => setNewShowcasePattern(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">Engine Status Badge</label>
-                <select
-                  value={newShowcaseStatus}
-                  onChange={(e) => setNewShowcaseStatus(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500"
-                >
-                  <option value="Active Mock Matrix">Active Mock Matrix</option>
-                  <option value="Simulation Ready">Simulation Ready</option>
-                  <option value="TCS Engine Active">TCS Engine Active</option>
-                  <option value="Certified Setup">Certified Setup</option>
-                </select>
-              </div>
-
-              <div className="sm:col-span-2 pt-2">
-                <button
-                  type="submit"
-                  className="w-full bg-teal-500 hover:bg-teal-400 text-slate-950 font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-teal-500/20"
-                >
-                  + Add Trial Showcase Exam Card
-                </button>
-              </div>
-            </form>
-
-            <div className="space-y-3 pt-2">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Current Featured Showcase Exams ({showcaseExams.length})</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {showcaseExams.map((exam, idx) => (
-                  <div key={idx} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
-                    <div>
-                      <span className="text-[10px] font-mono font-bold text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/20">
-                        {exam.code}
-                      </span>
-                      <h5 className="font-bold text-xs text-white mt-1.5">{exam.name}</h5>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{exam.pattern}</p>
-                    </div>
-                    <button
-                      onClick={() => handleDeleteShowcaseExam(idx)}
-                      className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 px-3 py-1.5 rounded-lg text-xs font-bold transition"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 2: MANAGE LIVE TESTS */}
-        {activeTab === 'live_tests' && (
-          <div className="space-y-6">
-            {!editingTest ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {existingTests.map((t) => (
-                  <div key={t.id} className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col justify-between">
-                    <div>
-                      <h3 className="font-bold text-base text-slate-100 mb-1">{t.title}</h3>
-                      <div className="text-xs text-slate-400 space-x-3 mb-4">
-                        <span>📝 {t.questions?.length || 0} Questions</span>
-                        <span>⏱️ {t.duration_mins} Minutes</span>
-                      </div>
-                    </div>
-                    <div className="flex space-x-2 pt-2 border-t border-slate-800">
-                      <button
-                        onClick={() => handleSelectTestToEdit(t)}
-                        className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-2 rounded-xl text-xs transition"
-                      >
-                        ✏️ Edit Questions & Key
-                      </button>
-                      <button
-                        onClick={() => onDeleteTest(t.id)}
-                        className="bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 px-3 py-2 rounded-xl text-xs font-bold transition"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-6">
-                <div className="flex justify-between items-center border-b border-slate-800 pb-4">
-                  <div>
-                    <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Editing Test Questions</span>
-                    <h2 className="text-xl font-bold text-white">{editingTest.title}</h2>
-                  </div>
-                  <div className="flex space-x-3">
-                    <button onClick={() => setEditingTest(null)} className="px-3 py-2 border border-slate-700 rounded-xl text-xs font-bold text-slate-300">Close</button>
-                    <button onClick={handleSaveTestChanges} className="px-4 py-2 bg-emerald-500 text-slate-950 font-black rounded-xl text-xs">💾 Save Changes</button>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-sm font-bold text-slate-200">Questions ({editingTest.questions?.length || 0})</h3>
-                    <button onClick={handleAddNewQuestion} className="bg-slate-800 border border-slate-700 text-emerald-400 text-xs px-3 py-1.5 rounded-lg font-bold">+ Add Question</button>
-                  </div>
-
-                  {editingTest.questions?.map((q, qIdx) => (
-                    <div key={qIdx} className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-3">
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs font-bold text-emerald-400">Q.{qIdx + 1}</span>
-                        <button onClick={() => handleDeleteQuestion(qIdx)} className="text-rose-400 text-xs font-bold">Remove</button>
-                      </div>
-
-                      <textarea
-                        rows={2}
-                        value={q.question_en}
-                        onChange={(e) => handleQuestionTextChange(qIdx, 'question_en', e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
-                      />
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                        {(q.options_en || []).map((opt, optIdx) => (
-                          <div key={optIdx} className={`flex items-center space-x-2 p-2 rounded-xl border ${q.correct_option_index === optIdx ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-slate-800 bg-slate-900'}`}>
-                            <input
-                              type="radio"
-                              name={`correct_${qIdx}`}
-                              checked={q.correct_option_index === optIdx}
-                              onChange={() => handleCorrectIndexChange(qIdx, optIdx)}
-                              className="accent-emerald-400 cursor-pointer"
-                            />
-                            <span className="text-slate-400 font-bold">{String.fromCharCode(65 + optIdx)}:</span>
-                            <input
-                              type="text"
-                              value={opt}
-                              onChange={(e) => handleOptionChange(qIdx, optIdx, e.target.value)}
-                              className="w-full bg-transparent outline-none text-slate-200 text-xs"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 3: UPLOAD & SYNC */}
+        {/* TAB: UPLOAD / IMPORT PAPER */}
         {activeTab === 'pdf' && (
           <div className="space-y-5">
             <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 max-w-md mx-auto">
@@ -749,7 +472,7 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
                 onClick={() => setUploadMethod('gemini_json')}
                 className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${uploadMethod === 'gemini_json' ? 'bg-emerald-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
               >
-                ✨ AI / Gemini JSON (100% Instant)
+                ✨ AI / JSON (Perfect Hindi Fonts)
               </button>
               <button
                 onClick={() => setUploadMethod('pdf')}
@@ -764,7 +487,7 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
                 <label className="text-xs text-slate-400 font-bold block mb-1">Test Title</label>
                 <input
                   type="text"
-                  placeholder="e.g. SSC CGL 2024 Tier-1 Official Shift 1"
+                  placeholder="e.g. SSC CGL Tier-1 Hindi Official Shift"
                   value={testTitle}
                   onChange={(e) => setTestTitle(e.target.value)}
                   className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-sm outline-none focus:border-emerald-400"
@@ -783,28 +506,15 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
 
             {uploadMethod === 'gemini_json' ? (
               <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4">
-                <div className="bg-emerald-950/40 border border-emerald-500/30 p-4 rounded-2xl space-y-3">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                    <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
-                      <span>💡</span> PDF Extract Prompt (Copy & Paste in Gemini with PDF):
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleCopyPrompt}
-                      className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs px-3 py-1.5 rounded-lg shadow transition active:scale-95 shrink-0"
-                    >
-                      {copiedPrompt ? "✓ Copied to Clipboard!" : "📋 Copy Prompt"}
-                    </button>
-                  </div>
-
-                  <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl font-mono text-[11px] text-slate-300 whitespace-pre-wrap select-all max-h-36 overflow-y-auto">
-                    {geminiPromptText}
-                  </div>
+                <div className="bg-emerald-950/40 border border-emerald-500/30 p-3.5 rounded-2xl">
+                  <span className="text-xs font-bold text-emerald-300">
+                    💡 Tip: Paste your JSON array directly. Inner quotes and clean Hindi font encoding are automatically sanitized.
+                  </span>
                 </div>
 
                 <textarea
-                  rows={8}
-                  placeholder="Paste Gemini-generated JSON array here..."
+                  rows={10}
+                  placeholder='Paste JSON array here... e.g. [{"question": "...", "options": [...], "correct_option_index": 0}]'
                   value={jsonInput}
                   onChange={(e) => setJsonInput(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-xs font-mono text-slate-200 outline-none focus:border-emerald-500"
@@ -814,7 +524,7 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
                   onClick={handleGeminiJsonImport}
                   className="w-full py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg transition active:scale-95"
                 >
-                  🚀 Instant Sync Questions to Student Dashboard
+                  🚀 Publish Hindi Questions to Student Portal
                 </button>
               </div>
             ) : (
@@ -846,149 +556,213 @@ Note: correct_option_index must be 0 for Option 1, 1 for Option 2, 2 for Option 
                   disabled={uploading}
                   className={`w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg ${uploading ? 'bg-slate-700 text-slate-400' : 'bg-amber-500 hover:bg-amber-600 text-slate-950'}`}
                 >
-                  {uploading ? 'Processing PDF on Render Backend...' : 'Generate & Sync To Student Dashboard'}
+                  {uploading ? 'Processing PDF on Render Backend...' : 'Generate & Publish Paper'}
                 </button>
               </div>
             )}
           </div>
         )}
 
-        {/* TAB 4: DIRECTORATE CIRCULARS */}
-        {activeTab === 'circulars' && (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-xl">
-            <div>
-              <span className="text-[10px] font-mono font-bold text-purple-400 bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 rounded">
-                Official Announcements Engine
-              </span>
-              <h3 className="text-lg font-black text-white mt-2">Publish Directorate Circular or Notification</h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Upload official circulars via PDF or JSON format. These will appear instantly as dynamic announcement blocks above the external website links on the portal.
-              </p>
-            </div>
-
-            <form onSubmit={handlePublishCircular} className="space-y-4">
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">Circular Title / Announcement *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Directorate Notice: Revised Normalization Formula for SSC CGL 2026"
-                  value={circularTitle}
-                  onChange={(e) => setCircularTitle(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-purple-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-300 block mb-1">Upload Circular Document (PDF / JSON)</label>
-                <input
-                  type="file"
-                  accept=".pdf,.json"
-                  onChange={(e) => setCircularFile(e.target.files[0])}
-                  className="w-full text-xs text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-purple-500 file:text-slate-950 hover:file:bg-purple-400 cursor-pointer bg-slate-950 border border-slate-800 rounded-xl p-2"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-black py-3 rounded-2xl text-xs uppercase tracking-wider shadow-lg shadow-purple-500/20 transition"
-              >
-                📢 Broadcast Circular to Portal Announcements →
-              </button>
-            </form>
-
-            <div className="space-y-3 pt-4 border-t border-slate-800">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Published Active Circulars ({circulars.length})</h4>
-              {circulars.length === 0 ? (
-                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-6 text-center text-slate-500 text-xs">
-                  No active circulars published. The announcement block will remain hidden on the portal.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {circulars.map((circ) => (
-                    <div key={circ.id} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
-                      <div>
-                        <span className="text-[10px] font-mono text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
-                          {circ.date}
-                        </span>
-                        <h5 className="font-bold text-xs text-white mt-1">{circ.title}</h5>
-                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">File: {circ.fileName}</p>
+        {/* TAB: MANAGE LIVE TESTS */}
+        {activeTab === 'live_tests' && (
+          <div className="space-y-6">
+            {!editingTest ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {existingTests.map((t) => (
+                  <div key={t.id} className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                      <h3 className="font-bold text-base text-slate-100 mb-1">{t.title}</h3>
+                      <div className="text-xs text-slate-400 space-x-3 mb-4">
+                        <span>📝 {t.questions?.length || 0} Questions</span>
+                        <span>⏱️ {t.duration_mins} Minutes</span>
                       </div>
+                    </div>
+                    <div className="flex space-x-2 pt-2 border-t border-slate-800">
                       <button
-                        onClick={() => handleDeleteCircular(circ.id)}
-                        className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 px-3 py-1.5 rounded-lg text-xs font-bold transition"
+                        onClick={() => handleSelectTestToEdit(t)}
+                        className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-2 rounded-xl text-xs transition"
+                      >
+                        ✏️ Edit Questions
+                      </button>
+                      <button
+                        onClick={() => onDeleteTest(t.id)}
+                        className="bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 px-3 py-2 rounded-xl text-xs font-bold transition"
                       >
                         Delete
                       </button>
                     </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-6">
+                <div className="flex justify-between items-center border-b border-slate-800 pb-4">
+                  <div>
+                    <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Editing Test</span>
+                    <h2 className="text-xl font-bold text-white">{editingTest.title}</h2>
+                  </div>
+                  <div className="flex space-x-3">
+                    <button onClick={() => setEditingTest(null)} className="px-3 py-2 border border-slate-700 rounded-xl text-xs font-bold text-slate-300">Close</button>
+                    <button onClick={handleSaveTestChanges} className="px-4 py-2 bg-emerald-500 text-slate-950 font-black rounded-xl text-xs">💾 Save Changes</button>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-sm font-bold text-slate-200">Questions ({editingTest.questions?.length || 0})</h3>
+                    <button onClick={handleAddNewQuestion} className="bg-slate-800 border border-slate-700 text-emerald-400 text-xs px-3 py-1.5 rounded-lg font-bold">+ Add Question</button>
+                  </div>
+
+                  {editingTest.questions?.map((q, qIdx) => (
+                    <div key={qIdx} className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-bold text-emerald-400">Q.{qIdx + 1}</span>
+                        <button onClick={() => handleDeleteQuestion(qIdx)} className="text-rose-400 text-xs font-bold">Remove</button>
+                      </div>
+
+                      <textarea
+                        rows={3}
+                        value={q.question || q.question_hi || q.question_en}
+                        onChange={(e) => handleQuestionTextChange(qIdx, e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 outline-none"
+                      />
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        {(q.options || q.options_hi || q.options_en || []).map((opt, optIdx) => (
+                          <div key={optIdx} className={`flex items-center space-x-2 p-2 rounded-xl border ${q.correct_option_index === optIdx ? 'border-emerald-500/50 bg-emerald-500/10' : 'border-slate-800 bg-slate-900'}`}>
+                            <input
+                              type="radio"
+                              name={`correct_${qIdx}`}
+                              checked={q.correct_option_index === optIdx}
+                              onChange={() => handleCorrectIndexChange(qIdx, optIdx)}
+                              className="accent-emerald-400 cursor-pointer"
+                            />
+                            <span className="text-slate-400 font-bold">{String.fromCharCode(65 + optIdx)}:</span>
+                            <input
+                              type="text"
+                              value={opt}
+                              onChange={(e) => handleOptionChange(qIdx, optIdx, e.target.value)}
+                              className="w-full bg-transparent outline-none text-slate-200 text-xs"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 5: CANDIDATE RECORDS */}
-        {activeTab === 'students' && (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-            <div className="p-4 border-b border-slate-800 flex justify-between items-center">
-              <h3 className="font-bold text-sm text-slate-200">Registered Students Roster & Operations</h3>
-              <div className="flex items-center space-x-3">
-                <button
-                  onClick={fetchStudents}
-                  className="text-xs bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold px-3 py-1.5 rounded-lg border border-slate-700 transition"
-                >
-                  ↻ Refresh Roster
-                </button>
-                <span className="text-xs text-slate-400">Total: {registeredStudents.length}</span>
-              </div>
-            </div>
-            {registeredStudents.length === 0 ? (
-              <div className="p-8 text-center text-slate-500 text-xs">Abhi tak koi naya student register nahi hua hai.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
-                    <tr>
-                      <th className="p-3">Roll ID</th>
-                      <th className="p-3">Candidate Name</th>
-                      <th className="p-3">Email & Phone</th>
-                      <th className="p-3">Registered Date</th>
-                      <th className="p-3">Current Tier</th>
-                      <th className="p-3 text-right">Action Controls</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {registeredStudents.map((st) => (
-                      <tr key={st.id} className="hover:bg-slate-800/40">
-                        <td className="p-3 font-mono text-emerald-400 font-bold">{st.id}</td>
-                        <td className="p-3 font-semibold text-slate-100">{st.name}</td>
-                        <td className="p-3 text-slate-400">
-                          <div>{st.email}</div>
-                          <div className="text-[10px] text-slate-500 font-mono">{st.phone || 'N/A'}</div>
-                        </td>
-                        <td className="p-3 text-slate-500">{st.createdAt || 'N/A'}</td>
-                        <td className="p-3">
-                          <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-                            {st.tier || 'FREE'}
-                          </span>
-                        </td>
-                        <td className="p-3 text-right">
-                          <button
-                            onClick={() => handleRevokeStudent(st.id)}
-                            className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 px-3 py-1.5 rounded-xl font-bold transition text-[11px]"
-                          >
-                            🗑️ Revoke / Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
             )}
           </div>
         )}
+
+        {/* TAB: GRIEVANCES */}
+        {activeTab === 'grievances' && (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl p-4">
+            <h3 className="font-bold text-sm text-slate-200 mb-3">Candidate Grievances & Resolution Desk ({grievances.length})</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-950 text-slate-400">
+                  <tr>
+                    <th className="p-3">Candidate</th>
+                    <th className="p-3">Message</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {grievances.map((item) => (
+                    <tr key={item.id}>
+                      <td className="p-3 font-semibold">{item.fullName} ({item.email})</td>
+                      <td className="p-3 text-slate-300">{item.feedback}</td>
+                      <td className="p-3 font-bold">{item.status}</td>
+                      <td className="p-3 text-right">
+                        {item.status !== 'RESOLVED' && (
+                          <button onClick={() => handleResolveGrievance(item.id)} className="bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded text-xs font-bold mr-2">✓ Resolve</button>
+                        )}
+                        <button onClick={() => handleDeleteGrievance(item.id)} className="text-rose-400 text-xs">🗑️</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: PUBLIC SHOWCASE EXAMS */}
+        {activeTab === 'showcase' && (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+            <h3 className="text-lg font-black text-white">Manage Landing Page Showcase Cards</h3>
+            <form onSubmit={handleAddShowcaseExam} className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+              <input type="text" placeholder="Exam Code (e.g. SSC-CGL)" value={newShowcaseCode} onChange={(e) => setNewShowcaseCode(e.target.value)} className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
+              <input type="text" placeholder="Exam Name" value={newShowcaseName} onChange={(e) => setNewShowcaseName(e.target.value)} className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
+              <input type="text" placeholder="Pattern (Tier-1)" value={newShowcasePattern} onChange={(e) => setNewShowcasePattern(e.target.value)} className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white" />
+              <button type="submit" className="bg-teal-500 text-slate-950 font-black py-2 rounded-xl text-xs sm:col-span-2">+ Add Showcase Card</button>
+            </form>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {showcaseExams.map((exam, idx) => (
+                <div key={idx} className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex justify-between items-center">
+                  <div>
+                    <span className="text-[10px] font-mono text-teal-400">{exam.code}</span>
+                    <h5 className="font-bold text-xs text-white">{exam.name}</h5>
+                  </div>
+                  <button onClick={() => handleDeleteShowcaseExam(idx)} className="text-rose-400 text-xs font-bold">Delete</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB: CIRCULARS */}
+        {activeTab === 'circulars' && (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+            <h3 className="text-lg font-black text-white">Publish Directorate Circulars</h3>
+            <form onSubmit={handlePublishCircular} className="space-y-3">
+              <input type="text" placeholder="Circular Title" value={circularTitle} onChange={(e) => setCircularTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white" />
+              <button type="submit" className="w-full bg-purple-600 text-white font-black py-2.5 rounded-xl text-xs">Publish Circular</button>
+            </form>
+            <div className="space-y-2">
+              {circulars.map((c) => (
+                <div key={c.id} className="bg-slate-950 border border-slate-800 p-3 rounded-xl flex justify-between items-center">
+                  <span className="text-xs text-white">{c.title}</span>
+                  <button onClick={() => handleDeleteCircular(c.id)} className="text-rose-400 text-xs">Delete</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB: CANDIDATE RECORDS */}
+        {activeTab === 'students' && (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden p-4">
+            <h3 className="font-bold text-sm text-slate-200 mb-3">Registered Candidates ({registeredStudents.length})</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-950 text-slate-400">
+                  <tr>
+                    <th className="p-3">Roll ID</th>
+                    <th className="p-3">Name</th>
+                    <th className="p-3">Email</th>
+                    <th className="p-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {registeredStudents.map((st) => (
+                    <tr key={st.id}>
+                      <td className="p-3 font-mono text-emerald-400">{st.id}</td>
+                      <td className="p-3">{st.name}</td>
+                      <td className="p-3 text-slate-400">{st.email}</td>
+                      <td className="p-3 text-right">
+                        <button onClick={() => handleRevokeStudent(st.id)} className="text-rose-400 text-xs">🗑️ Revoke</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
