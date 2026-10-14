@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Any
@@ -18,7 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Central In-Memory Store
+# Central In-Memory Store (Can be mapped to PostgreSQL / Cloud Database)
 LIVE_TESTS_STORE = []
 REGISTERED_STUDENTS_STORE = []
 GRIEVANCES_STORE = []
@@ -92,7 +92,7 @@ def delete_live_test(test_id: str):
     LIVE_TESTS_STORE = [t for t in LIVE_TESTS_STORE if t.get("id") != test_id]
     return {"status": "success"}
 
-# ----------------- STUDENT ROSTER & TIER APIS -----------------
+# ----------------- STUDENT ROSTER & AUTH APIS -----------------
 @app.get("/api/students")
 def get_all_students():
     return {"status": "success", "students": REGISTERED_STUDENTS_STORE}
@@ -102,13 +102,49 @@ def register_student(student: dict):
     if "tier" not in student:
         student["tier"] = "FREE"
     
-    existing = next((s for s in REGISTERED_STUDENTS_STORE if s.get("id") == student.get("id")), None)
+    existing = next((s for s in REGISTERED_STUDENTS_STORE if s.get("id") == student.get("id") or (s.get("email") and s.get("email").lower() == student.get("email", "").lower())), None)
     if not existing:
         REGISTERED_STUDENTS_STORE.insert(0, student)
     else:
         idx = REGISTERED_STUDENTS_STORE.index(existing)
         REGISTERED_STUDENTS_STORE[idx].update(student)
     return {"status": "success", "students": REGISTERED_STUDENTS_STORE}
+
+@app.post("/api/students/login")
+def login_student(data: dict):
+    identifier = data.get("identifier", "").strip().lower()
+    password = data.get("password", "").strip()
+
+    student = next((s for s in REGISTERED_STUDENTS_STORE if 
+        (s.get("email") and s.get("email").lower() == identifier) or 
+        (s.get("phone") and s.get("phone") == identifier) or
+        (s.get("id") and s.get("id").lower() == identifier)
+    ), None)
+
+    if not student:
+        raise HTTPException(status_code=404, detail="No candidate account found matching this identifier.")
+
+    if student.get("password") and student.get("password") != password:
+        raise HTTPException(status_code=401, detail="Incorrect password entered.")
+
+    return {"status": "success", "student": student}
+
+@app.post("/api/students/verify-identity")
+def verify_student_identity(data: dict):
+    identifier = data.get("identifier", "").strip().lower()
+    phone = data.get("phone", "").strip()
+
+    student = next((s for s in REGISTERED_STUDENTS_STORE if 
+        ((s.get("email") and s.get("email").lower() == identifier) or 
+         (s.get("id") and s.get("id").lower() == identifier) or
+         (s.get("phone") and s.get("phone") == identifier)) and
+        (s.get("phone") and s.get("phone") == phone)
+    ), None)
+
+    if not student:
+        raise HTTPException(status_code=404, detail="Identity verification failed.")
+
+    return {"status": "success", "student": student}
 
 @app.post("/api/students/update-profile")
 def update_student_profile(data: dict):
@@ -211,7 +247,7 @@ async def convert_pdf_to_cbt(file: UploadFile = File(...)):
                         crop_box = fitz.Rect(
                             page_obj.rect.x0 + 35,
                             r0.y1 + 4,
-                            page_obj.rect.x1 - 35,
+                        page_obj.rect.x1 - 35,
                             min(page_obj.rect.y1 - 60, r0.y1 + 240)
                         )
                         pix = page_obj.get_pixmap(matrix=fitz.Matrix(1.6, 1.6), clip=crop_box)
