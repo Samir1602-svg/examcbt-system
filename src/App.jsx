@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import NewsTicker from './components/NewsTicker';
 import LandingPage from './components/LandingPage';
 import StudentDashboard from './components/StudentDashboard';
@@ -108,40 +108,39 @@ export default function App() {
   const [currentStudent, setCurrentStudent] = useState(() => {
     const saved = localStorage.getItem('cbt_active_student');
     if (saved) {
-      const parsed = JSON.parse(saved);
-      const rollPhoto = localStorage.getItem(`cbt_photo_${parsed.id}`);
-      return { ...parsed, avatar: parsed.avatar || rollPhoto || null };
+      try {
+        const parsed = JSON.parse(saved);
+        const rollPhoto = localStorage.getItem(`cbt_photo_${parsed.id}`);
+        return { ...parsed, avatar: parsed.avatar || rollPhoto || null };
+      } catch {
+        return null;
+      }
     }
     return null;
   });
 
-  const [mockTests, setMockTests] = useState(() => {
-    const saved = localStorage.getItem('cbt_mock_tests');
-    return saved ? JSON.parse(saved) : [{
-      id: 'mock-ssc-real-100',
-      title: 'SSC CGL Tier-1 Official 100 Questions Full Mock Paper',
-      duration_mins: 60,
-      questions: generateFull100DemoExam("SSC CGL")
-    }];
-  });
+  // Centralized State: No dirty localStorage initial override
+  const [mockTests, setMockTests] = useState([]);
+
+  // Pure Central Database Fetch: Direct single source of truth from Render backend
+  const fetchCentralCloudTests = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/tests`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'success' && Array.isArray(data.tests)) {
+          setMockTests(data.tests);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Backend sync offline fallback:", err);
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchCentralCloudTests = async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/tests`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status === 'success' && Array.isArray(data.tests) && data.tests.length > 0) {
-            setMockTests(data.tests);
-            localStorage.setItem('cbt_mock_tests', JSON.stringify(data.tests));
-          }
-        }
-      } catch (err) {
-        console.warn("Using offline tests fallback");
-      }
-    };
     fetchCentralCloudTests();
-  }, []);
+  }, [fetchCentralCloudTests]);
 
   const handleStudentLoginSuccess = (studentObj) => {
     const storedPhoto = localStorage.getItem(`cbt_photo_${studentObj.id}`);
@@ -163,6 +162,7 @@ export default function App() {
 
   const handleAdminLoginSuccess = () => {
     setIsAuthModalOpen(false);
+    fetchCentralCloudTests();
     setCurrentScreen('admin');
   };
 
@@ -172,44 +172,57 @@ export default function App() {
     setCurrentScreen('landing');
   };
 
+  // Pure Backend Save & Cross-Device State Sync
   const handlePublishNewTest = async (newTest) => {
-    setMockTests((prev) => [newTest, ...prev]);
-    localStorage.setItem('cbt_mock_tests', JSON.stringify([newTest, ...mockTests]));
     try {
-      await fetch(`${API_BASE_URL}/api/tests/save`, {
+      const res = await fetch(`${API_BASE_URL}/api/tests/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newTest),
       });
+      if (res.ok) {
+        fetchCentralCloudTests();
+      } else {
+        setMockTests((prev) => [newTest, ...prev]);
+      }
     } catch (e) {
-      console.warn("Cloud sync error:", e);
+      console.warn("Cloud sync error, applying optimistic update:", e);
+      setMockTests((prev) => [newTest, ...prev]);
     }
   };
 
+  // Pure Backend Update
   const handleUpdateExistingTest = async (updatedTest) => {
-    const updated = mockTests.map((t) => (t.id === updatedTest.id ? updatedTest : t));
-    setMockTests(updated);
-    localStorage.setItem('cbt_mock_tests', JSON.stringify(updated));
     try {
-      await fetch(`${API_BASE_URL}/api/tests/save`, {
+      const res = await fetch(`${API_BASE_URL}/api/tests/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedTest),
       });
+      if (res.ok) {
+        fetchCentralCloudTests();
+      } else {
+        setMockTests((prev) => prev.map((t) => (t.id === updatedTest.id ? updatedTest : t)));
+      }
     } catch (e) {
-      console.warn("Cloud update failed:", e);
+      console.warn("Cloud update failed, applying optimistic update:", e);
+      setMockTests((prev) => prev.map((t) => (t.id === updatedTest.id ? updatedTest : t)));
     }
   };
 
+  // Pure Backend Delete
   const handleDeleteTest = async (testId) => {
     if (!window.confirm("Kya aap is test ko delete karna chahte hain?")) return;
-    const remaining = mockTests.filter((t) => t.id !== testId);
-    setMockTests(remaining);
-    localStorage.setItem('cbt_mock_tests', JSON.stringify(remaining));
     try {
-      await fetch(`${API_BASE_URL}/api/tests/${testId}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE_URL}/api/tests/${testId}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchCentralCloudTests();
+      } else {
+        setMockTests((prev) => prev.filter((t) => t.id !== testId));
+      }
     } catch (e) {
-      console.warn("Cloud delete failed:", e);
+      console.warn("Cloud delete failed, applying optimistic update:", e);
+      setMockTests((prev) => prev.filter((t) => t.id !== testId));
     }
   };
 
