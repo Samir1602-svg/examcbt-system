@@ -5,6 +5,7 @@ from typing import List, Optional, Any
 import fitz  # PyMuPDF
 import base64
 import json
+import os
 import re
 import feedparser
 
@@ -18,10 +19,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Central In-Memory Store (Can be mapped to PostgreSQL / Cloud Database)
-LIVE_TESTS_STORE = []
-REGISTERED_STUDENTS_STORE = []
-GRIEVANCES_STORE = []
+# ----------------- CENTRAL PERSISTENT DISK DATABASE -----------------
+DB_FILE = "cbt_cloud_db.json"
+
+def load_db():
+    if not os.path.exists(DB_FILE):
+        default_data = {
+            "tests": [],
+            "students": [],
+            "grievances": []
+        }
+        try:
+            with open(DB_FILE, "w", encoding="utf-8") as f:
+                json.dump(default_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print("DB init error:", e)
+        return default_data
+    try:
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print("DB read fallback:", e)
+        return {"tests": [], "students": [], "grievances": []}
+
+def save_db(data):
+    try:
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print("DB save error:", e)
 
 @app.get("/")
 def home():
@@ -30,21 +56,30 @@ def home():
 # ----------------- GRIEVANCE & SUPPORT DESK APIS -----------------
 @app.get("/api/grievances")
 def get_all_grievances():
-    return {"status": "success", "grievances": GRIEVANCES_STORE}
+    db = load_db()
+    return {"status": "success", "grievances": db.get("grievances", [])}
 
 @app.post("/api/grievances/submit")
 def submit_grievance(item: dict):
+    db = load_db()
     if "status" not in item:
         item["status"] = "PENDING"
-    GRIEVANCES_STORE.insert(0, item)
+    grievances = db.get("grievances", [])
+    grievances.insert(0, item)
+    db["grievances"] = grievances
+    save_db(db)
     return {"status": "success", "message": "Grievance logged centrally"}
 
 @app.post("/api/grievances/resolve")
 def resolve_grievance(data: dict):
+    db = load_db()
     grievance_id = data.get("id")
-    for g in GRIEVANCES_STORE:
+    grievances = db.get("grievances", [])
+    for g in grievances:
         if g.get("id") == grievance_id:
             g["status"] = "RESOLVED"
+            db["grievances"] = grievances
+            save_db(db)
             return {"status": "success", "message": "Marked as resolved"}
     return {"status": "error", "message": "Grievance not found"}
 
@@ -72,50 +107,64 @@ def get_live_exam_updates():
         ]
         return {"status": "success", "updates": fallback_updates}
 
-# ----------------- TEST APIS -----------------
+# ----------------- TEST APIS (Persistent Across Devices) -----------------
 @app.get("/api/tests")
 def get_all_tests():
-    return {"status": "success", "tests": LIVE_TESTS_STORE}
+    db = load_db()
+    return {"status": "success", "tests": db.get("tests", [])}
 
 @app.post("/api/tests/save")
 def save_live_test(test_data: dict):
-    existing_idx = next((i for i, t in enumerate(LIVE_TESTS_STORE) if t.get("id") == test_data.get("id")), None)
+    db = load_db()
+    tests = db.get("tests", [])
+    existing_idx = next((i for i, t in enumerate(tests) if t.get("id") == test_data.get("id")), None)
     if existing_idx is not None:
-        LIVE_TESTS_STORE[existing_idx] = test_data
+        tests[existing_idx] = test_data
     else:
-        LIVE_TESTS_STORE.insert(0, test_data)
+        tests.insert(0, test_data)
+    db["tests"] = tests
+    save_db(db)
     return {"status": "success", "message": "Test synced centrally across all devices"}
 
 @app.delete("/api/tests/{test_id}")
 def delete_live_test(test_id: str):
-    global LIVE_TESTS_STORE
-    LIVE_TESTS_STORE = [t for t in LIVE_TESTS_STORE if t.get("id") != test_id]
+    db = load_db()
+    tests = [t for t in db.get("tests", []) if t.get("id") != test_id]
+    db["tests"] = tests
+    save_db(db)
     return {"status": "success"}
 
 # ----------------- STUDENT ROSTER & AUTH APIS -----------------
 @app.get("/api/students")
 def get_all_students():
-    return {"status": "success", "students": REGISTERED_STUDENTS_STORE}
+    db = load_db()
+    return {"status": "success", "students": db.get("students", [])}
 
 @app.post("/api/students/register")
 def register_student(student: dict):
+    db = load_db()
+    students = db.get("students", [])
     if "tier" not in student:
         student["tier"] = "FREE"
     
-    existing = next((s for s in REGISTERED_STUDENTS_STORE if s.get("id") == student.get("id") or (s.get("email") and s.get("email").lower() == student.get("email", "").lower())), None)
+    existing = next((s for s in students if s.get("id") == student.get("id") or (s.get("email") and s.get("email").lower() == student.get("email", "").lower())), None)
     if not existing:
-        REGISTERED_STUDENTS_STORE.insert(0, student)
+        students.insert(0, student)
     else:
-        idx = REGISTERED_STUDENTS_STORE.index(existing)
-        REGISTERED_STUDENTS_STORE[idx].update(student)
-    return {"status": "success", "students": REGISTERED_STUDENTS_STORE}
+        idx = students.index(existing)
+        students[idx].update(student)
+    db["students"] = students
+    save_db(db)
+    return {"status": "success", "students": students}
 
 @app.post("/api/students/login")
 def login_student(data: dict):
+    db = load_db()
+    students = db.get("students", [])
     identifier = data.get("identifier", "").strip().lower()
     password = data.get("password", "").strip()
 
-    student = next((s for s in REGISTERED_STUDENTS_STORE if 
+    student = next((s for s in students if 
         (s.get("email") and s.get("email").lower() == identifier) or 
         (s.get("phone") and s.get("phone") == identifier) or
         (s.get("id") and s.get("id").lower() == identifier)
@@ -131,10 +180,12 @@ def login_student(data: dict):
 
 @app.post("/api/students/verify-identity")
 def verify_student_identity(data: dict):
+    db = load_db()
+    students = db.get("students", [])
     identifier = data.get("identifier", "").strip().lower()
     phone = data.get("phone", "").strip()
 
-    student = next((s for s in REGISTERED_STUDENTS_STORE if 
+    student = next((s for s in students if 
         ((s.get("email") and s.get("email").lower() == identifier) or 
          (s.get("id") and s.get("id").lower() == identifier) or
          (s.get("phone") and s.get("phone") == identifier)) and
@@ -148,23 +199,31 @@ def verify_student_identity(data: dict):
 
 @app.post("/api/students/update-profile")
 def update_student_profile(data: dict):
+    db = load_db()
+    students = db.get("students", [])
     student_id = data.get("id")
     avatar = data.get("avatar")
-    for student in REGISTERED_STUDENTS_STORE:
+    for student in students:
         if student.get("id") == student_id or student.get("email") == data.get("email"):
             if avatar:
                 student["avatar"] = avatar
                 student["photo"] = avatar
+            db["students"] = students
+            save_db(db)
             return {"status": "success", "message": "Profile updated successfully"}
     return {"status": "error", "message": "Student not found"}
 
 @app.post("/api/students/update-tier")
 def update_student_tier(data: dict):
+    db = load_db()
+    students = db.get("students", [])
     student_id = data.get("id")
     new_tier = data.get("tier")
-    for student in REGISTERED_STUDENTS_STORE:
+    for student in students:
         if student.get("id") == student_id:
             student["tier"] = new_tier
+            db["students"] = students
+            save_db(db)
             return {"status": "success", "message": f"Tier successfully updated to {new_tier}"}
     return {"status": "error", "message": "Student not found"}
 
@@ -247,7 +306,7 @@ async def convert_pdf_to_cbt(file: UploadFile = File(...)):
                         crop_box = fitz.Rect(
                             page_obj.rect.x0 + 35,
                             r0.y1 + 4,
-                        page_obj.rect.x1 - 35,
+                            page_obj.rect.x1 - 35,
                             min(page_obj.rect.y1 - 60, r0.y1 + 240)
                         )
                         pix = page_obj.get_pixmap(matrix=fitz.Matrix(1.6, 1.6), clip=crop_box)
