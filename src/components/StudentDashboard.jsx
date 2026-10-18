@@ -43,61 +43,93 @@ export default function StudentDashboard({
     }));
   });
 
-  const candidate = currentStudent || {
+  const [candidateState, setCandidateState] = useState(() => currentStudent || {
     id: "CBT-2026-894102",
     name: "Verified Aspirant",
     email: "aspirant.official@assessment.gov.in",
     tier: "FREE",
     subscriptionExpiry: "2026-10-18"
-  };
+  });
 
-  const currentTier = candidate.tier || "FREE";
-  const isAdvancedPro = currentTier === 'ADVANCED';
+  const currentTier = (candidateState.tier || "FREE").toUpperCase();
+  const isBasePlan = currentTier === 'FREE' || currentTier === 'BASE';
+  const isProPlan = currentTier === 'BASIC' || currentTier === 'PRO';
+  const isAdvancedPro = currentTier === 'ADVANCED' || currentTier === 'ADVANCE';
 
   // Persistent Student Profile Photo (Multi-layer fallback)
   const [studentPhoto, setStudentPhoto] = useState(() => {
-    return candidate.avatar || localStorage.getItem(`cbt_photo_${candidate.id}`) || null;
+    return candidateState.avatar || localStorage.getItem(`cbt_photo_${candidateState.id}`) || null;
   });
 
-  // Central Results & Billing Ledger Sync
+  // Central Results, Tier Verification & Billing Ledger Sync
   const fetchCentralCandidateData = async () => {
-    if (!candidate.id) return;
+    if (!candidateState.id) return;
 
-    // Fetch past results from central backend
+    // 1. Live Tier Synchronization directly from Central Cloud Database
     try {
-      const res = await fetch(`${API_BASE_URL}/api/results/${candidate.id}`);
+      const sRes = await fetch(`${API_BASE_URL}/api/students`);
+      if (sRes.ok) {
+        const sData = await sRes.json();
+        if (sData.status === 'success' && Array.isArray(sData.students)) {
+          const freshRecord = sData.students.find(
+            s => s.id === candidateState.id || (s.email && s.email.toLowerCase() === candidateState.email.toLowerCase())
+          );
+          if (freshRecord && freshRecord.tier && freshRecord.tier !== candidateState.tier) {
+            const merged = { ...candidateState, tier: freshRecord.tier };
+            setCandidateState(merged);
+            localStorage.setItem('cbt_active_student', JSON.stringify(merged));
+            if (onUpdateStudentProfile) onUpdateStudentProfile(merged);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Realtime student tier sync error:", e);
+    }
+
+    // 2. Fetch past results from central backend
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/results/${candidateState.id}`);
       if (res.ok) {
         const data = await res.json();
         if (data.status === 'success' && Array.isArray(data.results)) {
           setPastResults(data.results);
-          localStorage.setItem(`cbt_results_${candidate.id}`, JSON.stringify(data.results));
+          localStorage.setItem(`cbt_results_${candidateState.id}`, JSON.stringify(data.results));
         }
       }
     } catch (e) {
-      const localHistory = JSON.parse(localStorage.getItem(`cbt_results_${candidate.id}`) || '[]');
+      const localHistory = JSON.parse(localStorage.getItem(`cbt_results_${candidateState.id}`) || '[]');
       setPastResults(localHistory);
     }
 
-    // Fetch payments ledger from central backend
+    // 3. Fetch payments ledger from central backend
     try {
       const pRes = await fetch(`${API_BASE_URL}/api/payments`);
       if (pRes.ok) {
         const pData = await pRes.json();
         if (pData.status === 'success' && Array.isArray(pData.payments)) {
           const myPayments = pData.payments.filter(
-            p => p.studentId === candidate.id || p.email === candidate.email
+            p => p.studentId === candidateState.id || p.email === candidateState.email
           );
           if (myPayments.length > 0) {
             const formatted = myPayments.map(m => ({
               invoiceId: m.utr ? `UTR-${m.utr.slice(-6)}` : m.id,
               tier: m.tierName || (m.tier === 'ADVANCED' ? 'Advance Plan (Pro Vault)' : 'Pro Plan (Standard Premium)'),
               purchaseDate: m.date || new Date().toLocaleDateString('en-IN'),
-              expiryDate: m.expiryDate || "Pending Review",
+              expiryDate: m.expiryDate || "Active Term",
               status: m.status === 'APPROVED' ? 'SUCCESS (ACTIVATED)' : m.status === 'REJECTED' ? 'REJECTED' : 'PENDING VERIFICATION',
               amountPaid: `₹${m.amount}.00`
             }));
             setBillingHistory(formatted);
-            localStorage.setItem(`cbt_billing_${candidate.id}`, JSON.stringify(formatted));
+            localStorage.setItem(`cbt_billing_${candidateState.id}`, JSON.stringify(formatted));
+
+            // Auto-upgrade session locally if payment has been approved
+            const approvedPayment = myPayments.find(p => p.status === 'APPROVED');
+            if (approvedPayment && candidateState.tier !== approvedPayment.tier) {
+              const upgraded = { ...candidateState, tier: approvedPayment.tier };
+              setCandidateState(upgraded);
+              localStorage.setItem('cbt_active_student', JSON.stringify(upgraded));
+              if (onUpdateStudentProfile) onUpdateStudentProfile(upgraded);
+            }
             return;
           }
         }
@@ -106,54 +138,60 @@ export default function StudentDashboard({
       console.warn("Could not load central payments ledger:", err);
     }
 
-    const localBilling = JSON.parse(localStorage.getItem(`cbt_billing_${candidate.id}`) || JSON.stringify([
+    const localBilling = JSON.parse(localStorage.getItem(`cbt_billing_${candidateState.id}`) || JSON.stringify([
       {
         invoiceId: "INV-2026-001",
-        tier: currentTier === 'ADVANCED' ? `Advance Plan (₹${subscriptionPricing.advancedPrice} / Month)` : currentTier === 'BASIC' ? `Pro Plan (₹${subscriptionPricing.basicPrice} / Month)` : "Base Plan (Free Starter)",
+        tier: isAdvancedPro ? `Advance Plan (₹${subscriptionPricing.advancedPrice} / Month)` : isProPlan ? `Pro Plan (₹${subscriptionPricing.basicPrice} / Month)` : "Base Plan (Free Starter)",
         purchaseDate: "2026-10-11",
-        expiryDate: candidate.subscriptionExpiry || "2026-11-11",
-        status: currentTier === 'FREE' ? "Active (Complimentary)" : "SUCCESS",
-        amountPaid: currentTier === 'ADVANCED' ? `₹${subscriptionPricing.advancedPrice}.00` : currentTier === 'BASIC' ? `₹${subscriptionPricing.basicPrice}.00` : "₹0.00"
+        expiryDate: candidateState.subscriptionExpiry || "2026-11-11",
+        status: isBasePlan ? "Active (Complimentary)" : "SUCCESS",
+        amountPaid: isAdvancedPro ? `₹${subscriptionPricing.advancedPrice}.00` : isProPlan ? `₹${subscriptionPricing.basicPrice}.00` : "₹0.00"
       }
     ]));
     setBillingHistory(localBilling);
   };
 
   useEffect(() => {
-    if (candidate.id) {
-      const savedPhoto = candidate.avatar || localStorage.getItem(`cbt_photo_${candidate.id}`);
+    if (currentStudent && currentStudent.id) {
+      setCandidateState(currentStudent);
+    }
+  }, [currentStudent]);
+
+  useEffect(() => {
+    if (candidateState.id) {
+      const savedPhoto = candidateState.avatar || localStorage.getItem(`cbt_photo_${candidateState.id}`);
       setStudentPhoto(savedPhoto || null);
 
       fetchCentralCandidateData();
 
-      const vault = JSON.parse(localStorage.getItem(`cbt_vault_${candidate.id}`) || '[]');
+      const vault = JSON.parse(localStorage.getItem(`cbt_vault_${candidateState.id}`) || '[]');
       setCustomVaultTests(vault);
 
       const livePricing = JSON.parse(localStorage.getItem('cbt_subscription_pricing') || 'null');
       if (livePricing) setSubscriptionPricing(livePricing);
 
-      if (candidate.subscriptionExpiry && currentTier !== 'FREE') {
-        const expiryDate = new Date(candidate.subscriptionExpiry);
+      if (candidateState.subscriptionExpiry && !isBasePlan) {
+        const expiryDate = new Date(candidateState.subscriptionExpiry);
         const today = new Date();
         const diffTime = expiryDate - today;
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         
         if (diffDays <= 5) {
-          const lastShown = localStorage.getItem(`cbt_renewal_alert_${candidate.id}`);
+          const lastShown = localStorage.getItem(`cbt_renewal_alert_${candidateState.id}`);
           const todayStr = today.toDateString();
           if (lastShown !== todayStr) {
             setShowRenewalBanner(true);
-            localStorage.setItem(`cbt_renewal_alert_${candidate.id}`, todayStr);
+            localStorage.setItem(`cbt_renewal_alert_${candidateState.id}`, todayStr);
           }
         }
       }
     }
-  }, [candidate.id, currentTier, candidate.avatar, subscriptionPricing.basicPrice, subscriptionPricing.advancedPrice]);
+  }, [candidateState.id, candidateState.tier]);
 
-  // Photo Upload Handler with Lightweight Canvas Compression to prevent storage quota resets
+  // Photo Upload Handler with Lightweight Canvas Compression
   const handlePhotoUpload = (e) => {
     const file = e.target.files[0];
-    if (file && candidate.id) {
+    if (file && candidateState.id) {
       const reader = new FileReader();
       reader.onload = (event) => {
         const img = new Image();
@@ -166,39 +204,34 @@ export default function StudentDashboard({
           const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
 
           setStudentPhoto(compressedBase64);
+          localStorage.setItem(`cbt_photo_${candidateState.id}`, compressedBase64);
 
-          // 1. Roll-ID specific persistent storage
-          localStorage.setItem(`cbt_photo_${candidate.id}`, compressedBase64);
-
-          // 2. Updated candidate object
           const updatedCandidate = { 
-            ...candidate, 
+            ...candidateState, 
             avatar: compressedBase64,
             photo: compressedBase64 
           };
 
-          // 3. Update global App.jsx state
+          setCandidateState(updatedCandidate);
+
           if (onUpdateStudentProfile) {
             onUpdateStudentProfile(updatedCandidate);
           }
 
-          // 4. Update active session in localStorage
           localStorage.setItem('cbt_active_student', JSON.stringify(updatedCandidate));
 
-          // 5. Update global registered students ledger
           const allStudents = JSON.parse(localStorage.getItem('cbt_students') || '[]');
           const updatedRoster = allStudents.map(s => 
-            (s.id === candidate.id || s.email === candidate.email) 
+            (s.id === candidateState.id || s.email === candidateState.email) 
               ? { ...s, avatar: compressedBase64, photo: compressedBase64 } 
               : s
           );
           localStorage.setItem('cbt_students', JSON.stringify(updatedRoster));
 
-          // 6. Backend persistent profile sync
           fetch(`${API_BASE_URL}/api/students/update-profile`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: candidate.id, email: candidate.email, avatar: compressedBase64 }),
+            body: JSON.stringify({ id: candidateState.id, email: candidateState.email, avatar: compressedBase64 }),
           }).catch(err => console.warn("Background photo sync offline:", err));
         };
         img.src = event.target.result;
@@ -241,7 +274,7 @@ export default function StudentDashboard({
 
         const updatedVault = [newCustomTest, ...customVaultTests];
         setCustomVaultTests(updatedVault);
-        localStorage.setItem(`cbt_vault_${candidate.id}`, JSON.stringify(updatedVault));
+        localStorage.setItem(`cbt_vault_${candidateState.id}`, JSON.stringify(updatedVault));
         setSelectedFile(null);
         alert("Custom question paper successfully parsed and stored in your secure vault!");
       } else {
@@ -293,9 +326,9 @@ export default function StudentDashboard({
 
     const paymentPayload = {
       id: `pay-${Date.now()}`,
-      studentId: candidate.id,
-      name: candidate.name,
-      email: candidate.email,
+      studentId: candidateState.id,
+      name: candidateState.name,
+      email: candidateState.email,
       tier: selectedPlanDetails.tier,
       tierName: selectedPlanDetails.title,
       amount: selectedPlanDetails.amount,
@@ -346,10 +379,27 @@ export default function StudentDashboard({
     setTimeout(() => setCopiedUpi(false), 2500);
   };
 
+  // Distinct Theme Styling Matrix for Base vs Pro vs Advance
+  const themeContainerClass = isAdvancedPro 
+    ? 'bg-[#0f0e0a] text-amber-50 selection:bg-amber-400 selection:text-slate-950'
+    : isProPlan
+    ? 'bg-slate-950 text-cyan-50 selection:bg-teal-400 selection:text-slate-950'
+    : 'bg-slate-950 text-white selection:bg-emerald-500 selection:text-slate-950';
+
+  const headerCardClass = isAdvancedPro
+    ? 'bg-[#18160e] border-amber-500/40 shadow-amber-950/20'
+    : isProPlan
+    ? 'bg-slate-900 border-teal-500/40 shadow-teal-950/20'
+    : 'bg-slate-900 border-slate-800';
+
+  const tierBadgeClass = isAdvancedPro
+    ? 'bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-yellow-300 border-yellow-500/50 shadow-md shadow-yellow-500/20'
+    : isProPlan
+    ? 'bg-teal-500/20 text-teal-300 border-teal-500/40 shadow-md shadow-teal-500/10'
+    : 'bg-slate-800 text-slate-300 border-slate-700';
+
   return (
-    <div className={`min-h-screen p-4 sm:p-8 font-sans transition-colors duration-300 ${
-      isAdvancedPro ? 'bg-[#0f0e0a] text-amber-50 selection:bg-amber-400 selection:text-slate-950' : 'bg-slate-950 text-white selection:bg-emerald-500 selection:text-slate-950'
-    }`}>
+    <div className={`min-h-screen p-4 sm:p-8 font-sans transition-colors duration-300 ${themeContainerClass}`}>
       <div className="max-w-6xl mx-auto space-y-6">
         
         {/* Subscription Renewal Reminder Banner */}
@@ -371,18 +421,29 @@ export default function StudentDashboard({
         )}
 
         {/* Top Header Bar */}
-        <header className={`flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4 sm:p-5 rounded-3xl shadow-xl border ${
-          isAdvancedPro ? 'bg-[#18160e] border-amber-500/30 shadow-amber-950/20' : 'bg-slate-900 border-slate-800'
-        }`}>
+        <header className={`flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4 sm:p-5 rounded-3xl shadow-xl border ${headerCardClass}`}>
           <div className="flex items-center space-x-3.5">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm shadow-md ${
-              isAdvancedPro ? 'bg-gradient-to-tr from-amber-500 to-yellow-400 text-slate-950 shadow-amber-500/20' : 'bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 shadow-emerald-500/20'
+              isAdvancedPro ? 'bg-gradient-to-tr from-amber-500 to-yellow-400 text-slate-950 shadow-amber-500/20' : 
+              isProPlan ? 'bg-gradient-to-tr from-teal-400 to-cyan-500 text-slate-950 shadow-teal-500/20' :
+              'bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 shadow-emerald-500/20'
             }`}>
               CBT
             </div>
             <div>
-              <h1 className="font-black text-base sm:text-lg text-white">EXAMCBT Candidate Portal</h1>
-              <p className={`text-[11px] ${isAdvancedPro ? 'text-amber-200/70' : 'text-slate-400'}`}>National Computer Based Assessment System</p>
+              <div className="flex items-center gap-2">
+                <h1 className="font-black text-base sm:text-lg text-white">EXAMCBT Candidate Portal</h1>
+                <span className={`text-[9px] uppercase font-mono font-bold px-2 py-0.5 rounded border ${
+                  isAdvancedPro ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' :
+                  isProPlan ? 'bg-teal-500/20 text-teal-300 border-teal-500/30' :
+                  'bg-slate-800 text-slate-400 border-slate-700'
+                }`}>
+                  {isAdvancedPro ? 'PRO VAULT ACTIVE' : isProPlan ? 'PRO PASS ACTIVE' : 'STARTER'}
+                </span>
+              </div>
+              <p className={`text-[11px] ${isAdvancedPro ? 'text-amber-200/70' : isProPlan ? 'text-cyan-200/70' : 'text-slate-400'}`}>
+                National Computer Based Assessment System
+              </p>
             </div>
           </div>
 
@@ -390,7 +451,9 @@ export default function StudentDashboard({
             <button
               onClick={onBackHome}
               className={`text-xs font-bold px-3.5 py-2 rounded-xl transition ${
-                isAdvancedPro ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                isAdvancedPro ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20' :
+                isProPlan ? 'bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 border border-teal-500/20' :
+                'bg-slate-800 hover:bg-slate-700 text-slate-300'
               }`}
             >
               Public Home
@@ -404,20 +467,26 @@ export default function StudentDashboard({
           </div>
         </header>
 
-        {/* Candidate Identity & Tier Card */}
+        {/* Candidate Identity & Tier Distinctive Showcase Card */}
         <div className={`p-5 sm:p-6 rounded-3xl grid grid-cols-1 md:grid-cols-3 gap-6 items-center shadow-lg border ${
-          isAdvancedPro ? 'bg-[#18160e]/80 border-amber-500/30' : 'bg-slate-900/60 border-slate-800'
+          isAdvancedPro ? 'bg-[#18160e]/90 border-amber-500/40 shadow-amber-950/20' : 
+          isProPlan ? 'bg-slate-900/90 border-teal-500/40 shadow-teal-950/20' :
+          'bg-slate-900/60 border-slate-800'
         }`}>
           <div className="flex items-center space-x-4 md:col-span-2">
             <div className="relative group shrink-0">
               <div className={`w-16 h-20 sm:w-20 sm:h-24 rounded-2xl border-2 border-dashed overflow-hidden flex items-center justify-center shadow-inner ${
-                isAdvancedPro ? 'bg-[#221f14] border-amber-500/40' : 'bg-slate-800 border-slate-700'
+                isAdvancedPro ? 'bg-[#221f14] border-amber-500/40' : 
+                isProPlan ? 'bg-slate-950 border-teal-500/40' :
+                'bg-slate-800 border-slate-700'
               }`}>
                 {studentPhoto ? (
                   <img src={studentPhoto} alt="Candidate" className="w-full h-full object-cover" />
                 ) : (
                   <label htmlFor="dash-photo-upload" className={`cursor-pointer text-[10px] text-center p-2 leading-tight block transition ${
-                    isAdvancedPro ? 'text-amber-300 hover:text-amber-400' : 'text-slate-400 hover:text-emerald-400'
+                    isAdvancedPro ? 'text-amber-300 hover:text-amber-400' : 
+                    isProPlan ? 'text-teal-300 hover:text-teal-400' :
+                    'text-slate-400 hover:text-emerald-400'
                   }`}>
                     Upload<br/>Photo
                   </label>
@@ -434,7 +503,9 @@ export default function StudentDashboard({
                 <label 
                   htmlFor="dash-photo-upload" 
                   className={`absolute -bottom-2 -right-1 text-[9px] font-black px-1.5 py-0.5 rounded cursor-pointer shadow ${
-                    isAdvancedPro ? 'bg-amber-500 hover:bg-amber-400 text-slate-950' : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+                    isAdvancedPro ? 'bg-amber-500 hover:bg-amber-400 text-slate-950' : 
+                    isProPlan ? 'bg-teal-400 hover:bg-teal-300 text-slate-950' :
+                    'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
                   }`}
                 >
                   Change
@@ -445,35 +516,49 @@ export default function StudentDashboard({
             <div className="space-y-1.5">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`text-[9px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full inline-block border ${
-                  isAdvancedPro ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                  isAdvancedPro ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' : 
+                  isProPlan ? 'bg-teal-500/10 text-teal-400 border-teal-500/30' :
+                  'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                 }`}>
                   Verified Candidate
                 </span>
-                <span className={`text-[9px] uppercase font-black tracking-widest px-2 py-0.5 rounded-full inline-block border ${
-                  isAdvancedPro ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40 shadow-sm shadow-yellow-500/20' :
-                  currentTier === 'BASIC' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' :
-                  'bg-slate-800 text-slate-300 border-slate-700'
-                }`}>
-                  {isAdvancedPro ? '★ Advance Plan (Pro Vault)' : currentTier === 'BASIC' ? 'Pro Plan (Standard Premium)' : 'Base Plan (Free Starter)'}
+                
+                {/* Dynamically Synced Tier Badge */}
+                <span className={`text-[9px] uppercase font-black tracking-widest px-2.5 py-0.5 rounded-full inline-block border ${tierBadgeClass}`}>
+                  {isAdvancedPro ? '★ Advance Plan (Pro Vault)' : isProPlan ? '⚡ Pro Plan (Standard Premium)' : 'Base Plan (Free Starter)'}
                 </span>
               </div>
-              <h2 className="text-lg sm:text-2xl font-black text-white">{candidate.name}</h2>
-              <p className={`text-xs font-mono ${isAdvancedPro ? 'text-amber-200/70' : 'text-slate-400'}`}>{candidate.email}</p>
+              <h2 className="text-lg sm:text-2xl font-black text-white">{candidateState.name}</h2>
+              <p className={`text-xs font-mono ${isAdvancedPro ? 'text-amber-200/70' : isProPlan ? 'text-teal-200/70' : 'text-slate-400'}`}>
+                {candidateState.email}
+              </p>
             </div>
           </div>
 
           <div className={`p-4 rounded-2xl text-left md:text-right flex flex-col justify-between border ${
-            isAdvancedPro ? 'bg-[#12100a] border-amber-500/30' : 'bg-slate-950 border-slate-800/80'
+            isAdvancedPro ? 'bg-[#12100a] border-amber-500/30' : 
+            isProPlan ? 'bg-slate-950 border-teal-500/30' :
+            'bg-slate-950 border-slate-800/80'
           }`}>
             <div>
-              <span className={`text-[10px] uppercase font-bold tracking-wider ${isAdvancedPro ? 'text-amber-300/70' : 'text-slate-500'}`}>Candidate Roll ID</span>
-              <span className={`text-lg sm:text-xl font-mono font-black mt-0.5 block ${isAdvancedPro ? 'text-amber-400' : 'text-emerald-400'}`}>{candidate.id}</span>
+              <span className={`text-[10px] uppercase font-bold tracking-wider ${
+                isAdvancedPro ? 'text-amber-300/70' : isProPlan ? 'text-teal-300/70' : 'text-slate-500'
+              }`}>
+                Candidate Roll ID
+              </span>
+              <span className={`text-lg sm:text-xl font-mono font-black mt-0.5 block ${
+                isAdvancedPro ? 'text-amber-400' : isProPlan ? 'text-teal-400' : 'text-emerald-400'
+              }`}>
+                {candidateState.id}
+              </span>
             </div>
             <div className="flex gap-2 mt-3 justify-end flex-wrap">
               <button 
                 onClick={() => setActiveTab('subscription_plans')}
                 className={`text-[10px] font-bold py-1 px-3 rounded-xl transition border ${
-                  isAdvancedPro ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  isAdvancedPro ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/30' : 
+                  isProPlan ? 'bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 border-teal-500/30' :
+                  'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                 }`}
               >
                 Plans & Pricing
@@ -483,16 +568,21 @@ export default function StudentDashboard({
         </div>
 
         {/* Tab Navigation */}
-        <div className={`flex space-x-6 border-b pb-2 overflow-x-auto ${isAdvancedPro ? 'border-amber-500/20' : 'border-slate-800'}`}>
+        <div className={`flex space-x-6 border-b pb-2 overflow-x-auto ${
+          isAdvancedPro ? 'border-amber-500/20' : isProPlan ? 'border-teal-500/20' : 'border-slate-800'
+        }`}>
           <button
             onClick={() => setActiveTab('available_tests')}
             className={`text-xs font-bold pb-2 border-b-2 transition whitespace-nowrap ${
-              activeTab === 'available_tests' ? (isAdvancedPro ? 'border-amber-400 text-amber-400' : 'border-emerald-400 text-emerald-400') : 'border-transparent text-slate-400 hover:text-white'
+              activeTab === 'available_tests' ? (
+                isAdvancedPro ? 'border-amber-400 text-amber-400' : isProPlan ? 'border-teal-400 text-teal-400' : 'border-emerald-400 text-emerald-400'
+              ) : 'border-transparent text-slate-400 hover:text-white'
             }`}
           >
             Available Examination Series ({mockTests.length})
           </button>
           
+          {/* Custom Vault is available for Advanced Pro */}
           {isAdvancedPro && (
             <button
               onClick={() => setActiveTab('custom_vault')}
@@ -507,7 +597,9 @@ export default function StudentDashboard({
           <button
             onClick={() => setActiveTab('subscription_plans')}
             className={`text-xs font-bold pb-2 border-b-2 transition whitespace-nowrap ${
-              activeTab === 'subscription_plans' ? (isAdvancedPro ? 'border-amber-400 text-amber-400' : 'border-emerald-400 text-emerald-400') : 'border-transparent text-slate-400 hover:text-white'
+              activeTab === 'subscription_plans' ? (
+                isAdvancedPro ? 'border-amber-400 text-amber-400' : isProPlan ? 'border-teal-400 text-teal-400' : 'border-emerald-400 text-emerald-400'
+              ) : 'border-transparent text-slate-400 hover:text-white'
             }`}
           >
             Upgrade Plans & Subscriptions
@@ -516,7 +608,9 @@ export default function StudentDashboard({
           <button
             onClick={() => setActiveTab('billing_history')}
             className={`text-xs font-bold pb-2 border-b-2 transition whitespace-nowrap ${
-              activeTab === 'billing_history' ? (isAdvancedPro ? 'border-amber-400 text-amber-400' : 'border-emerald-400 text-emerald-400') : 'border-transparent text-slate-400 hover:text-white'
+              activeTab === 'billing_history' ? (
+                isAdvancedPro ? 'border-amber-400 text-amber-400' : isProPlan ? 'border-teal-400 text-teal-400' : 'border-emerald-400 text-emerald-400'
+              ) : 'border-transparent text-slate-400 hover:text-white'
             }`}
           >
             Billing & Purchases ({billingHistory.length})
@@ -525,7 +619,9 @@ export default function StudentDashboard({
           <button
             onClick={() => setActiveTab('past_results')}
             className={`text-xs font-bold pb-2 border-b-2 transition whitespace-nowrap ${
-              activeTab === 'past_results' ? (isAdvancedPro ? 'border-amber-400 text-amber-400' : 'border-emerald-400 text-emerald-400') : 'border-transparent text-slate-400 hover:text-white'
+              activeTab === 'past_results' ? (
+                isAdvancedPro ? 'border-amber-400 text-amber-400' : isProPlan ? 'border-teal-400 text-teal-400' : 'border-emerald-400 text-emerald-400'
+              ) : 'border-transparent text-slate-400 hover:text-white'
             }`}
           >
             My Past Exam Results ({pastResults.length})
@@ -535,10 +631,10 @@ export default function StudentDashboard({
         {/* TAB 1: Available Tests */}
         {activeTab === 'available_tests' && (
           <div className="space-y-4">
-            {currentTier === "FREE" && mockTests.length > 10 && (
+            {isBasePlan && mockTests.length > 10 && (
               <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3">
                 <p className="text-xs text-amber-300">
-                  ⚠️ <strong>Base Plan Active:</strong> Aapke paas 10 sample mock examinations ka access hai. Full repository unlock karne ke liye Pro ya Advance plan me upgrade karein.
+                  ⚠️ <strong>Base Plan Active:</strong> Aapke paas 10 sample mock examinations ka access hai. Unlimited tests unlock karne ke liye Pro ya Advance plan me upgrade karein.
                 </p>
                 <button
                   onClick={() => setActiveTab('subscription_plans')}
@@ -551,25 +647,31 @@ export default function StudentDashboard({
 
             {mockTests.length === 0 ? (
               <div className={`border rounded-2xl p-12 text-center text-xs ${
-                isAdvancedPro ? 'bg-[#18160e]/40 border-amber-500/20 text-amber-200/60' : 'bg-slate-900/40 border-slate-800/80 text-slate-500'
+                isAdvancedPro ? 'bg-[#18160e]/40 border-amber-500/20 text-amber-200/60' : 
+                isProPlan ? 'bg-slate-900/40 border-teal-500/20 text-teal-200/60' :
+                'bg-slate-900/40 border-slate-800/80 text-slate-500'
               }`}>
                 Koi active test available nahi hai. Admin portal se naya test generate karein.
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {mockTests.map((t, idx) => {
-                  const isLocked = currentTier === "FREE" && idx >= 10;
+                  const isLocked = isBasePlan && idx >= 10;
                   return (
                     <div 
                       key={t.id || idx} 
                       className={`border p-5 rounded-3xl flex flex-col justify-between transition space-y-4 ${
-                        isAdvancedPro ? 'bg-[#18160e] border-amber-500/30 hover:border-amber-500/50 shadow-lg shadow-amber-950/10' : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                        isAdvancedPro ? 'bg-[#18160e] border-amber-500/30 hover:border-amber-500/50 shadow-lg shadow-amber-950/10' : 
+                        isProPlan ? 'bg-slate-900 border-teal-500/30 hover:border-teal-500/50 shadow-lg shadow-teal-950/10' :
+                        'bg-slate-900 border-slate-800 hover:border-slate-700'
                       }`}
                     >
                       <div>
                         <div className="flex justify-between items-center">
                           <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
-                            isAdvancedPro ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' : 'text-teal-400 bg-teal-500/10 border-teal-500/30'
+                            isAdvancedPro ? 'text-amber-400 bg-amber-500/10 border-amber-500/30' : 
+                            isProPlan ? 'text-teal-300 bg-teal-500/10 border-teal-500/30' :
+                            'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
                           }`}>
                             Official Tier-1 Simulation
                           </span>
@@ -580,7 +682,9 @@ export default function StudentDashboard({
                           )}
                         </div>
                         <h3 className="font-bold text-base sm:text-lg text-white mt-2 mb-1">{t.title}</h3>
-                        <div className={`flex flex-wrap gap-3 text-xs mt-3 ${isAdvancedPro ? 'text-amber-200/70' : 'text-slate-400'}`}>
+                        <div className={`flex flex-wrap gap-3 text-xs mt-3 ${
+                          isAdvancedPro ? 'text-amber-200/70' : isProPlan ? 'text-cyan-200/70' : 'text-slate-400'
+                        }`}>
                           <span>📝 {t.questions?.length || 0} Questions</span>
                           <span>⏱ {t.duration_mins} Minutes</span>
                           <span>⚡ Real Marking (+2.0 / -0.5)</span>
@@ -590,9 +694,7 @@ export default function StudentDashboard({
                       {isLocked ? (
                         <button
                           onClick={() => setActiveTab('subscription_plans')}
-                          className={`w-full font-bold py-3 rounded-2xl text-xs sm:text-sm uppercase tracking-wider transition ${
-                            isAdvancedPro ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-lg shadow-amber-500/20' : 'bg-slate-800 hover:bg-slate-700 text-amber-400'
-                          }`}
+                          className="w-full font-bold py-3 rounded-2xl text-xs sm:text-sm uppercase tracking-wider transition bg-slate-800 hover:bg-slate-700 text-amber-400"
                         >
                           Unlock Full Repository →
                         </button>
@@ -600,7 +702,9 @@ export default function StudentDashboard({
                         <button
                           onClick={() => onStartMock(t)}
                           className={`w-full font-black py-3 rounded-2xl text-xs sm:text-sm uppercase tracking-wider shadow-lg active:scale-95 transition ${
-                            isAdvancedPro ? 'bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 shadow-amber-500/20' : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/10'
+                            isAdvancedPro ? 'bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 shadow-amber-500/20' : 
+                            isProPlan ? 'bg-gradient-to-r from-teal-400 to-cyan-400 text-slate-950 shadow-teal-500/20' :
+                            'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/10'
                           }`}
                         >
                           Attempt Official Examination →
@@ -695,7 +799,7 @@ export default function StudentDashboard({
                 Transparent Examination Subscriptions
               </span>
               <h2 className="text-xl sm:text-3xl font-black text-white mt-2">Choose the Plan Built for Your Ambition</h2>
-              <p className={`text-xs ${isAdvancedPro ? 'text-amber-200/70' : 'text-slate-400'}`}>
+              <p className={`text-xs ${isAdvancedPro ? 'text-amber-200/70' : isProPlan ? 'text-cyan-200/70' : 'text-slate-400'}`}>
                 Scale your preparation with genuine TCS iON exam simulation, complete mock test repositories, and advanced custom AI parsing tools.
               </p>
             </div>
@@ -704,7 +808,7 @@ export default function StudentDashboard({
               
               {/* ================= TIER 1: BASE PLAN (FREE STARTER) ================= */}
               <div className={`border rounded-3xl p-6 flex flex-col justify-between space-y-6 transition ${
-                currentTier === 'FREE' ? 'ring-2 ring-emerald-500/40 bg-slate-900/90' : 'bg-slate-900/50'
+                isBasePlan ? 'ring-2 ring-emerald-500/40 bg-slate-900/90' : 'bg-slate-900/50'
               } border-slate-800`}>
                 <div className="space-y-4">
                   <div>
@@ -776,21 +880,21 @@ export default function StudentDashboard({
                   disabled
                   className="w-full bg-slate-800 text-slate-400 font-bold py-3 rounded-2xl text-xs cursor-default uppercase tracking-wider"
                 >
-                  {currentTier === 'FREE' ? 'Current Active Plan' : 'Free Starter Tier'}
+                  {isBasePlan ? 'Current Active Plan' : 'Free Starter Tier'}
                 </button>
               </div>
 
               {/* ================= TIER 2: PRO PLAN (STANDARD PREMIUM) ================= */}
               <div className={`border rounded-3xl p-6 flex flex-col justify-between space-y-6 relative overflow-hidden transition shadow-xl ${
-                currentTier === 'BASIC' ? 'ring-2 ring-amber-400 bg-slate-900 border-amber-500' : 'bg-slate-900/90 border-amber-500/40 hover:border-amber-400'
+                isProPlan ? 'ring-2 ring-teal-400 bg-slate-900 border-teal-500' : 'bg-slate-900/90 border-teal-500/40 hover:border-teal-400'
               }`}>
-                <div className="absolute top-0 right-0 bg-gradient-to-l from-amber-500 to-amber-600 text-slate-950 text-[9px] font-black px-3.5 py-1 rounded-bl-xl uppercase tracking-wider shadow">
+                <div className="absolute top-0 right-0 bg-gradient-to-l from-teal-400 to-cyan-500 text-slate-950 text-[9px] font-black px-3.5 py-1 rounded-bl-xl uppercase tracking-wider shadow">
                   Most Popular for Serious Aspirants
                 </div>
 
                 <div className="space-y-4">
                   <div>
-                    <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-full">
+                    <span className="text-[10px] font-mono font-bold text-teal-300 bg-teal-500/10 border border-teal-500/30 px-2.5 py-1 rounded-full">
                       Standard Premium
                     </span>
                     <h3 className="text-lg font-black text-white mt-3">2. Pro Plan (Standard Premium)</h3>
@@ -798,9 +902,9 @@ export default function StudentDashboard({
                       <strong>Target:</strong> Dedicated aspirants (SSC CGL, CHSL, RRB) jo roz regular mock test practice karna chahte hain.
                     </p>
                     <div className="mt-3 flex items-baseline gap-2">
-                      <span className="text-3xl font-black text-amber-400">₹{subscriptionPricing.basicPrice}</span>
+                      <span className="text-3xl font-black text-teal-300">₹{subscriptionPricing.basicPrice}</span>
                       <span className="text-xs text-slate-400 font-semibold">/ Month</span>
-                      <span className="text-[11px] text-amber-300 font-mono bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                      <span className="text-[11px] text-teal-300 font-mono bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/20">
                         ₹{subscriptionPricing.basicSemiAnnualPrice || 299} / 6 Months
                       </span>
                     </div>
@@ -813,11 +917,11 @@ export default function StudentDashboard({
                       </span>
                       <ul className="text-xs text-slate-300 space-y-1">
                         <li className="flex items-start gap-1.5">
-                          <span className="text-amber-400 shrink-0">•</span>
+                          <span className="text-teal-400 shrink-0">•</span>
                           <span><strong>Unlimited Access</strong> to all Official Mock Tests (SSC, RRB, CPO etc.)</span>
                         </li>
                         <li className="flex items-start gap-1.5">
-                          <span className="text-amber-400 shrink-0">•</span>
+                          <span className="text-teal-400 shrink-0">•</span>
                           <span>Live mock tests aur previous year question (PYQ) shifts</span>
                         </li>
                       </ul>
@@ -863,15 +967,15 @@ export default function StudentDashboard({
 
                 <button 
                   onClick={() => handleInitiatePayment('BASIC', 'Pro Plan (Standard Premium)', subscriptionPricing.basicPrice)}
-                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/20 active:scale-95"
+                  className="w-full bg-teal-400 hover:bg-teal-300 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-teal-500/20 active:scale-95"
                 >
-                  {currentTier === 'BASIC' ? 'Active Plan (Renew Monthly) →' : `Upgrade to Pro (₹${subscriptionPricing.basicPrice} / Month) →`}
+                  {isProPlan ? 'Active Plan (Renew Monthly) →' : `Upgrade to Pro (₹${subscriptionPricing.basicPrice} / Month) →`}
                 </button>
               </div>
 
               {/* ================= TIER 3: ADVANCE PLAN (PRO VAULT & AI PARSER) ================= */}
               <div className={`border rounded-3xl p-6 flex flex-col justify-between space-y-6 relative overflow-hidden transition shadow-2xl ${
-                currentTier === 'ADVANCED' ? 'ring-2 ring-yellow-400 bg-[#18160e] border-yellow-500' : 'bg-gradient-to-b from-[#18160e] to-slate-950 border-purple-500/50 hover:border-yellow-400'
+                isAdvancedPro ? 'ring-2 ring-yellow-400 bg-[#18160e] border-yellow-500' : 'bg-gradient-to-b from-[#18160e] to-slate-950 border-purple-500/50 hover:border-yellow-400'
               }`}>
                 <div className="absolute top-0 right-0 bg-gradient-to-l from-yellow-400 to-amber-500 text-slate-950 text-[9px] font-black px-3.5 py-1 rounded-bl-xl uppercase tracking-wider shadow">
                   Ultimate AI Power Tier
@@ -942,7 +1046,7 @@ export default function StudentDashboard({
                   onClick={() => handleInitiatePayment('ADVANCED', 'Advance Plan (Pro Vault & AI Parser)', subscriptionPricing.advancedPrice)}
                   className="w-full bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-500 hover:opacity-95 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-yellow-500/20 active:scale-95"
                 >
-                  {currentTier === 'ADVANCED' ? 'Active Plan (Renew Pro Vault) →' : `Upgrade to Advance (₹${subscriptionPricing.advancedPrice} / Month) →`}
+                  {isAdvancedPro ? 'Active Plan (Renew Pro Vault) →' : `Upgrade to Advance (₹${subscriptionPricing.advancedPrice} / Month) →`}
                 </button>
               </div>
 
@@ -955,14 +1059,16 @@ export default function StudentDashboard({
           <div className="space-y-4">
             <div>
               <h3 className="text-base font-black text-white">Billing & Purchases Ledger</h3>
-              <p className={`text-xs ${isAdvancedPro ? 'text-amber-200/70' : 'text-slate-400'}`}>
+              <p className={`text-xs ${isAdvancedPro ? 'text-amber-200/70' : isProPlan ? 'text-teal-200/70' : 'text-slate-400'}`}>
                 Complete record of your subscription purchases, invoice IDs, transaction statuses, and validity periods.
               </p>
             </div>
 
             {billingHistory.length === 0 ? (
               <div className={`border rounded-2xl p-12 text-center text-xs ${
-                isAdvancedPro ? 'bg-[#18160e]/40 border-amber-500/20 text-amber-200/60' : 'bg-slate-900/40 border-slate-800 text-slate-500'
+                isAdvancedPro ? 'bg-[#18160e]/40 border-amber-500/20 text-amber-200/60' : 
+                isProPlan ? 'bg-slate-900/40 border-teal-500/20 text-teal-200/60' :
+                'bg-slate-900/40 border-slate-800 text-slate-500'
               }`}>
                 No billing or purchase history found.
               </div>
@@ -970,7 +1076,9 @@ export default function StudentDashboard({
               <div className="space-y-3">
                 {billingHistory.map((bill, index) => (
                   <div key={index} className={`border p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${
-                    isAdvancedPro ? 'bg-[#18160e] border-amber-500/30' : 'bg-slate-900 border-slate-800'
+                    isAdvancedPro ? 'bg-[#18160e] border-amber-500/30' : 
+                    isProPlan ? 'bg-slate-900 border-teal-500/30' :
+                    'bg-slate-900 border-slate-800'
                   }`}>
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
@@ -984,17 +1092,19 @@ export default function StudentDashboard({
                         </span>
                       </div>
                       <h4 className="font-bold text-sm text-white">{bill.tier}</h4>
-                      <div className={`text-xs space-x-3 ${isAdvancedPro ? 'text-amber-200/70' : 'text-slate-400'}`}>
+                      <div className={`text-xs space-x-3 ${isAdvancedPro ? 'text-amber-200/70' : isProPlan ? 'text-teal-200/70' : 'text-slate-400'}`}>
                         <span>Purchased: {bill.purchaseDate}</span>
                         <span>•</span>
                         <span>Expires: {bill.expiryDate}</span>
                       </div>
                     </div>
                     <div className={`border px-4 py-3 rounded-xl text-right ${
-                      isAdvancedPro ? 'bg-[#12100a] border-amber-500/30' : 'bg-slate-950 border-slate-800'
+                      isAdvancedPro ? 'bg-[#12100a] border-amber-500/30' : 
+                      isProPlan ? 'bg-slate-950 border-teal-500/30' :
+                      'bg-slate-950 border-slate-800'
                     }`}>
-                      <span className={`text-[10px] uppercase font-bold block ${isAdvancedPro ? 'text-amber-300/70' : 'text-slate-400'}`}>Amount Paid</span>
-                      <span className={`text-lg font-black ${isAdvancedPro ? 'text-amber-400' : 'text-emerald-400'}`}>{bill.amountPaid}</span>
+                      <span className={`text-[10px] uppercase font-bold block ${isAdvancedPro ? 'text-amber-300/70' : isProPlan ? 'text-teal-300/70' : 'text-slate-400'}`}>Amount Paid</span>
+                      <span className={`text-lg font-black ${isAdvancedPro ? 'text-amber-400' : isProPlan ? 'text-teal-400' : 'text-emerald-400'}`}>{bill.amountPaid}</span>
                     </div>
                   </div>
                 ))}
@@ -1008,7 +1118,9 @@ export default function StudentDashboard({
           <div>
             {pastResults.length === 0 ? (
               <div className={`border rounded-2xl p-12 text-center text-xs ${
-                isAdvancedPro ? 'bg-[#18160e]/40 border-amber-500/20 text-amber-200/60' : 'bg-slate-900/40 border-slate-800 text-slate-500'
+                isAdvancedPro ? 'bg-[#18160e]/40 border-amber-500/20 text-amber-200/60' : 
+                isProPlan ? 'bg-slate-900/40 border-teal-500/20 text-teal-200/60' :
+                'bg-slate-900/40 border-slate-800 text-slate-500'
               }`}>
                 <span className="text-2xl block mb-2">📊</span>
                 <p>Abhi tak aapne koi exam attempt nahi kiya hai.</p>
@@ -1017,26 +1129,32 @@ export default function StudentDashboard({
               <div className="space-y-3">
                 {pastResults.map((rec) => (
                   <div key={rec.id} className={`border p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${
-                    isAdvancedPro ? 'bg-[#18160e] border-amber-500/30' : 'bg-slate-900 border-slate-800'
+                    isAdvancedPro ? 'bg-[#18160e] border-amber-500/30' : 
+                    isProPlan ? 'bg-slate-900 border-teal-500/30' :
+                    'bg-slate-900 border-slate-800'
                   }`}>
                     <div>
                       <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
-                        isAdvancedPro ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                        isAdvancedPro ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 
+                        isProPlan ? 'text-teal-400 bg-teal-500/10 border-teal-500/20' :
+                        'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
                       }`}>
                         {rec.date}
                       </span>
                       <h3 className="font-bold text-sm sm:text-base text-white mt-1">{rec.testTitle}</h3>
-                      <div className={`text-xs space-x-3 mt-1 ${isAdvancedPro ? 'text-amber-200/70' : 'text-slate-400'}`}>
+                      <div className={`text-xs space-x-3 mt-1 ${isAdvancedPro ? 'text-amber-200/70' : isProPlan ? 'text-teal-200/70' : 'text-slate-400'}`}>
                         <span>Correct: <strong className="text-emerald-400">{rec.correct}</strong></span>
                         <span>Wrong: <strong className="text-rose-400">{rec.wrong}</strong></span>
-                        <span>Skipped: <strong className={isAdvancedPro ? 'text-amber-200' : 'text-slate-300'}>{rec.unattempted}</strong></span>
+                        <span>Skipped: <strong className={isAdvancedPro ? 'text-amber-200' : isProPlan ? 'text-teal-200' : 'text-slate-300'}>{rec.unattempted}</strong></span>
                       </div>
                     </div>
                     <div className={`border px-4 py-2.5 rounded-xl text-right ${
-                      isAdvancedPro ? 'bg-[#12100a] border-amber-500/30' : 'bg-slate-950 border-slate-800'
+                      isAdvancedPro ? 'bg-[#12100a] border-amber-500/30' : 
+                      isProPlan ? 'bg-slate-950 border-teal-500/30' :
+                      'bg-slate-950 border-slate-800'
                     }`}>
-                      <span className={`text-[10px] uppercase font-bold block ${isAdvancedPro ? 'text-amber-300/70' : 'text-slate-400'}`}>Final Score</span>
-                      <span className={`text-lg font-black ${isAdvancedPro ? 'text-amber-400' : 'text-emerald-400'}`}>{rec.finalScore}</span>
+                      <span className={`text-[10px] uppercase font-bold block ${isAdvancedPro ? 'text-amber-300/70' : isProPlan ? 'text-teal-300/70' : 'text-slate-400'}`}>Final Score</span>
+                      <span className={`text-lg font-black ${isAdvancedPro ? 'text-amber-400' : isProPlan ? 'text-teal-400' : 'text-emerald-400'}`}>{rec.finalScore}</span>
                     </div>
                   </div>
                 ))}
