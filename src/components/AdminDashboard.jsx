@@ -16,12 +16,16 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
   const [registeredStudents, setRegisteredStudents] = useState([]);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
 
-  // Directorate Circulars Management
+  // Directorate Circulars Management with PDF Upload Support
   const [circulars, setCirculars] = useState(() => {
     return JSON.parse(localStorage.getItem('cbt_directorate_circulars') || '[]');
   });
   const [circularTitle, setCircularTitle] = useState('');
-  const [circularFile, setCircularFile] = useState(null);
+  const [circularPdfFile, setCircularPdfFile] = useState(null);
+  const [circularBase64, setCircularBase64] = useState(null);
+
+  // Payments / UTR Verifications State
+  const [paymentsList, setPaymentsList] = useState([]);
 
   // Showcase Exams
   const [showcaseExams, setShowcaseExams] = useState(() => {
@@ -103,10 +107,65 @@ Crucial Formatting Rules:
     }
   };
 
+  // Central Payment / UTR Requests Sync
+  const fetchPayments = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/payments`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'success' && Array.isArray(data.payments)) {
+          setPaymentsList(data.payments);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not fetch central payment requests:", e);
+    }
+  };
+
   useEffect(() => {
     fetchStudents();
     fetchGrievances();
+    fetchPayments();
   }, [activeTab]);
+
+  // Approve Payment and Activate Tier
+  const handleApprovePayment = async (paymentId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/payments/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: paymentId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        alert(data.message || "Payment approved and candidate tier activated!");
+        fetchPayments();
+        fetchStudents();
+      } else {
+        alert(data.detail || "Error approving payment.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Network error approving payment.");
+    }
+  };
+
+  // Reject Payment
+  const handleRejectPayment = async (paymentId) => {
+    if (!window.confirm("Are you sure you want to reject this payment receipt?")) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/payments/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: paymentId }),
+      });
+      if (res.ok) {
+        fetchPayments();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleResolveGrievance = async (gId) => {
     const updated = grievances.map(g => g.id === gId ? { ...g, status: 'RESOLVED' } : g);
@@ -413,14 +472,31 @@ Crucial Formatting Rules:
     }
   };
 
+  // Circular PDF File Reader (Converts to Data URL for instant viewing)
+  const handleCircularPdfSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setCircularPdfFile(file);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setCircularBase64(event.target.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Publish Circular with PDF Support
   const handlePublishCircular = (e) => {
     e.preventDefault();
-    if (!circularTitle.trim()) return;
+    if (!circularTitle.trim()) {
+      alert("Please provide the Circular Notice Title.");
+      return;
+    }
 
     const newCircular = {
       id: `circ-${Date.now()}`,
       title: circularTitle.trim(),
-      fileName: circularFile ? circularFile.name : "Circular_Notice.pdf",
+      fileName: circularPdfFile ? circularPdfFile.name : "Notice_Document.pdf",
+      pdfUrl: circularBase64 || null,
       date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     };
 
@@ -428,8 +504,9 @@ Crucial Formatting Rules:
     setCirculars(updated);
     localStorage.setItem('cbt_directorate_circulars', JSON.stringify(updated));
     setCircularTitle('');
-    setCircularFile(null);
-    alert("Success: Directorate circular broadcasted to announcements.");
+    setCircularPdfFile(null);
+    setCircularBase64(null);
+    alert("Success: Directorate circular with PDF attachment published to announcements!");
   };
 
   const handleDeleteCircular = (circId) => {
@@ -438,6 +515,17 @@ Crucial Formatting Rules:
       setCirculars(updated);
       localStorage.setItem('cbt_directorate_circulars', JSON.stringify(updated));
     }
+  };
+
+  const handleOpenCircularPdf = (pdfUrl, title) => {
+    if (!pdfUrl) {
+      alert("No PDF document was attached to this circular.");
+      return;
+    }
+    const pdfWindow = window.open("");
+    pdfWindow.document.write(
+      `<title>${title || 'Directorate Circular'}</title><iframe width='100%' height='100%' style='border:none;' src='${pdfUrl}'></iframe>`
+    );
   };
 
   const handleRevokeStudent = (studentId) => {
@@ -449,7 +537,8 @@ Crucial Formatting Rules:
     }
   };
 
-  const pendingCount = grievances.filter(g => g.status !== 'RESOLVED').length;
+  const pendingGrievancesCount = grievances.filter(g => g.status !== 'RESOLVED').length;
+  const pendingPaymentsCount = paymentsList.filter(p => p.status === 'PENDING').length;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-4 sm:p-6 font-sans">
@@ -472,31 +561,45 @@ Crucial Formatting Rules:
         </div>
 
         {/* Metric Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 sm:gap-4">
+          
+          {/* Payments Approvals Metric */}
+          <div onClick={() => setActiveTab('payments')} className="bg-slate-900 border border-slate-800 hover:border-emerald-500/50 p-4 rounded-2xl cursor-pointer transition">
+            <span className="text-xs text-slate-400">Payment Approvals</span>
+            <div className="text-2xl sm:text-3xl font-black text-emerald-400 mt-1">
+              {pendingPaymentsCount} <span className="text-xs text-slate-500 font-normal">Pending</span>
+            </div>
+            <span className="text-[10px] text-emerald-400 font-bold block mt-1">Verify UPI UTR receipts →</span>
+          </div>
+
           <div onClick={() => setActiveTab('grievances')} className="bg-slate-900 border border-slate-800 hover:border-rose-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Support Grievances</span>
-            <div className="text-2xl sm:text-3xl font-black text-rose-400 mt-1">{pendingCount} <span className="text-xs text-slate-500 font-normal">Pending</span></div>
+            <div className="text-2xl sm:text-3xl font-black text-rose-400 mt-1">{pendingGrievancesCount} <span className="text-xs text-slate-500 font-normal">Pending</span></div>
             <span className="text-[10px] text-rose-400 font-bold block mt-1">Resolve candidate tickets →</span>
           </div>
+
           <div onClick={() => setActiveTab('students')} className="bg-slate-900 border border-slate-800 hover:border-amber-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Total Registered</span>
             <div className="text-2xl sm:text-3xl font-black text-amber-400 mt-1">{registeredStudents.length}</div>
             <span className="text-[10px] text-slate-500 block mt-1">View roster →</span>
           </div>
+
           <div onClick={() => setActiveTab('live_tests')} className="bg-slate-900 border border-slate-800 hover:border-emerald-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Live Mock Tests</span>
             <div className="text-2xl sm:text-3xl font-black text-emerald-400 mt-1">{existingTests.length}</div>
             <span className="text-[10px] text-emerald-400 font-bold block mt-1">Edit questions →</span>
           </div>
+
           <div onClick={() => setActiveTab('showcase')} className="bg-slate-900 border border-slate-800 hover:border-teal-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Demo Showcase</span>
             <div className="text-2xl sm:text-3xl font-black text-teal-400 mt-1">{showcaseExams.length}</div>
             <span className="text-[10px] text-teal-400 font-bold block mt-1">Landing cards →</span>
           </div>
-          <div onClick={() => setActiveTab('circulars')} className="bg-slate-900 border border-slate-800 hover:border-purple-500/50 p-4 rounded-2xl cursor-pointer transition col-span-2 sm:col-span-1">
+
+          <div onClick={() => setActiveTab('circulars')} className="bg-slate-900 border border-slate-800 hover:border-purple-500/50 p-4 rounded-2xl cursor-pointer transition">
             <span className="text-xs text-slate-400">Circulars</span>
             <div className="text-2xl sm:text-3xl font-black text-purple-400 mt-1">{circulars.length}</div>
-            <span className="text-[10px] text-purple-400 font-bold block mt-1">Announcements →</span>
+            <span className="text-[10px] text-purple-400 font-bold block mt-1">Announcements & PDFs →</span>
           </div>
         </div>
 
@@ -508,30 +611,42 @@ Crucial Formatting Rules:
           >
             ⚡ Add / Import New Paper
           </button>
+
+          <button
+            onClick={() => { setActiveTab('payments'); fetchPayments(); }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'payments' ? 'bg-emerald-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
+          >
+            💳 UPI Payment Approvals ({pendingPaymentsCount > 0 ? `${pendingPaymentsCount} PENDING` : paymentsList.length})
+          </button>
+
           <button
             onClick={() => setActiveTab('live_tests')}
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'live_tests' ? 'bg-emerald-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
           >
             📝 Manage Live Tests ({existingTests.length})
           </button>
+
           <button
             onClick={() => { setActiveTab('grievances'); fetchGrievances(); }}
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'grievances' ? 'bg-rose-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
           >
             📩 Grievances & Support ({grievances.length})
           </button>
+
           <button
             onClick={() => setActiveTab('showcase')}
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'showcase' ? 'bg-teal-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
           >
             🎯 Public Demo Showcase ({showcaseExams.length})
           </button>
+
           <button
             onClick={() => setActiveTab('circulars')}
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'circulars' ? 'bg-purple-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
           >
-            📢 Directorate Circulars ({circulars.length})
+            📢 Directorate Circulars & PDFs ({circulars.length})
           </button>
+
           <button
             onClick={() => { setActiveTab('students'); fetchStudents(); }}
             className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${activeTab === 'students' ? 'bg-amber-500 text-slate-950 font-black' : 'text-slate-400 hover:text-white'}`}
@@ -539,6 +654,104 @@ Crucial Formatting Rules:
             👥 Candidate Records ({registeredStudents.length})
           </button>
         </div>
+
+        {/* TAB: UPI PAYMENT APPROVALS & UTR VERIFICATIONS */}
+        {activeTab === 'payments' && (
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+              <div>
+                <h3 className="font-black text-base text-white">Direct UPI Payment Verifications & UTR Ledger</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Payments received at <strong className="text-emerald-400 font-mono">dcgamers00876@okicici</strong>. Verify the 12-digit UTR in your bank app and approve access.
+                </p>
+              </div>
+              <button 
+                onClick={fetchPayments} 
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-1.5 rounded-xl font-bold transition"
+              >
+                🔄 Refresh Ledger
+              </button>
+            </div>
+
+            {paymentsList.length === 0 ? (
+              <div className="p-12 text-center text-slate-500 text-xs bg-slate-950 rounded-xl border border-slate-800">
+                No payment requests or UTR submissions registered yet.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-950 text-slate-400 font-mono uppercase text-[11px]">
+                    <tr>
+                      <th className="p-3">Candidate</th>
+                      <th className="p-3">Requested Tier</th>
+                      <th className="p-3">Amount</th>
+                      <th className="p-3">Submitted UTR / Ref No</th>
+                      <th className="p-3">Date</th>
+                      <th className="p-3">Status</th>
+                      <th className="p-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800 font-sans">
+                    {paymentsList.map((p) => {
+                      const isPending = p.status === 'PENDING';
+                      return (
+                        <tr key={p.id} className="hover:bg-slate-950/40 transition">
+                          <td className="p-3">
+                            <span className="font-bold text-white block">{p.name}</span>
+                            <span className="text-[11px] text-slate-400 font-mono">{p.studentId} • {p.email}</span>
+                          </td>
+                          <td className="p-3 font-semibold text-amber-300">
+                            {p.tierName || (p.tier === 'ADVANCED' ? 'Advanced Pro Vault' : 'Standard Premium')}
+                          </td>
+                          <td className="p-3 font-black text-emerald-400 text-sm">
+                            ₹{p.amount}.00
+                          </td>
+                          <td className="p-3">
+                            <span className="font-mono bg-slate-950 px-2 py-1 rounded text-amber-400 border border-slate-800 select-all font-bold">
+                              {p.utr}
+                            </span>
+                          </td>
+                          <td className="p-3 text-slate-400 font-mono text-[11px]">{p.date}</td>
+                          <td className="p-3">
+                            <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${
+                              p.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' :
+                              p.status === 'REJECTED' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/30' :
+                              'bg-amber-500/10 text-amber-400 border border-amber-500/30 animate-pulse'
+                            }`}>
+                              {p.status}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right space-x-2 whitespace-nowrap">
+                            {isPending ? (
+                              <>
+                                <button
+                                  onClick={() => handleApprovePayment(p.id)}
+                                  className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black px-3 py-1.5 rounded-lg text-xs shadow-md transition active:scale-95"
+                                  title="Approve payment & activate candidate subscription immediately"
+                                >
+                                  ✓ Approve & Activate
+                                </button>
+                                <button
+                                  onClick={() => handleRejectPayment(p.id)}
+                                  className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold px-2.5 py-1.5 rounded-lg text-xs transition"
+                                  title="Reject invalid UTR"
+                                >
+                                  ✕ Reject
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-[11px] text-slate-500 italic">Settled</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* TAB: UPLOAD / IMPORT PAPER */}
         {activeTab === 'pdf' && (
@@ -864,21 +1077,104 @@ Crucial Formatting Rules:
           </div>
         )}
 
-        {/* TAB: CIRCULARS */}
+        {/* TAB: CIRCULARS WITH PDF UPLOAD & CLICK-TO-VIEW */}
         {activeTab === 'circulars' && (
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
-            <h3 className="text-lg font-black text-white">Publish Directorate Circulars</h3>
-            <form onSubmit={handlePublishCircular} className="space-y-3">
-              <input type="text" placeholder="Circular Official Title" value={circularTitle} onChange={(e) => setCircularTitle(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white" />
-              <button type="submit" className="w-full bg-purple-600 text-white font-black py-2.5 rounded-xl text-xs">Publish Circular Notice</button>
-            </form>
-            <div className="space-y-2">
-              {circulars.map((c) => (
-                <div key={c.id} className="bg-slate-950 border border-slate-800 p-3 rounded-xl flex justify-between items-center">
-                  <span className="text-xs text-white">{c.title}</span>
-                  <button onClick={() => handleDeleteCircular(c.id)} className="text-rose-400 text-xs">Delete</button>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
+            <div>
+              <h3 className="text-lg font-black text-white">Publish Directorate Circulars & Policy PDFs</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Upload official notification notices with attached PDF documents for public candidate verification.
+              </p>
+            </div>
+
+            <form onSubmit={handlePublishCircular} className="space-y-4 bg-slate-950 p-5 rounded-2xl border border-slate-800">
+              <div>
+                <label className="text-xs text-slate-300 font-bold block mb-1">Circular Notice Title *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Examination Cancellation / Re-scheduling Directorate Circular 2026"
+                  value={circularTitle}
+                  onChange={(e) => setCircularTitle(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-white outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-300 font-bold block mb-1">Attach Official PDF Document</label>
+                <div className="border border-dashed border-slate-700 p-4 rounded-xl text-center bg-slate-900/50">
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    id="circular-pdf-file"
+                    onChange={handleCircularPdfSelect}
+                    className="hidden"
+                  />
+                  <label htmlFor="circular-pdf-file" className="cursor-pointer block">
+                    <span className="text-2xl block mb-1">📑</span>
+                    <span className="text-xs text-purple-400 font-bold hover:underline">
+                      {circularPdfFile ? circularPdfFile.name : "Click to select and attach Circular PDF document"}
+                    </span>
+                    <span className="text-[10px] text-slate-500 block mt-0.5">Format: PDF (Max size 5MB recommended)</span>
+                  </label>
                 </div>
-              ))}
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-purple-600 hover:bg-purple-500 text-white font-black py-3 rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-purple-600/20 active:scale-95"
+              >
+                Publish Circular Notice & PDF →
+              </button>
+            </form>
+
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Published Directorate Circulars ({circulars.length})</h4>
+              {circulars.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-500 bg-slate-950 rounded-xl border border-slate-800">
+                  No circular notifications published yet.
+                </div>
+              ) : (
+                circulars.map((c) => (
+                  <div key={c.id} className="bg-slate-950 border border-slate-800 p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded">
+                          {c.date}
+                        </span>
+                        {c.pdfUrl && (
+                          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                            PDF Attached
+                          </span>
+                        )}
+                      </div>
+                      <h5 className="font-bold text-sm text-white">{c.title}</h5>
+                      <span className="text-[11px] text-slate-500 font-mono block">{c.fileName}</span>
+                    </div>
+
+                    <div className="flex items-center space-x-2 self-end sm:self-auto">
+                      {c.pdfUrl ? (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenCircularPdf(c.pdfUrl, c.title)}
+                          className="bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 font-bold px-3 py-1.5 rounded-xl text-xs transition flex items-center gap-1.5"
+                        >
+                          <span>📄</span> Open PDF
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-600 italic">No PDF</span>
+                      )}
+                      <button
+                        onClick={() => handleDeleteCircular(c.id)}
+                        className="text-rose-400 hover:text-rose-300 text-xs font-bold p-1.5"
+                        title="Delete circular"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -894,6 +1190,7 @@ Crucial Formatting Rules:
                     <th className="p-3">Roll ID</th>
                     <th className="p-3">Candidate Name</th>
                     <th className="p-3">Registered Email</th>
+                    <th className="p-3">Access Tier</th>
                     <th className="p-3 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -901,8 +1198,17 @@ Crucial Formatting Rules:
                   {registeredStudents.map((st) => (
                     <tr key={st.id}>
                       <td className="p-3 font-mono text-emerald-400">{st.id}</td>
-                      <td className="p-3">{st.name}</td>
+                      <td className="p-3 font-semibold">{st.name}</td>
                       <td className="p-3 text-slate-400">{st.email}</td>
+                      <td className="p-3">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          st.tier === 'ADVANCED' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30' :
+                          st.tier === 'BASIC' ? 'bg-teal-500/10 text-teal-400 border border-teal-500/30' :
+                          'bg-slate-800 text-slate-400'
+                        }`}>
+                          {st.tier || 'FREE'}
+                        </span>
+                      </td>
                       <td className="p-3 text-right">
                         <button onClick={() => handleRevokeStudent(st.id)} className="text-rose-400 text-xs font-bold">Revoke Access</button>
                       </td>
