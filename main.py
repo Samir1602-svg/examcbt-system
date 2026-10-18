@@ -27,7 +27,8 @@ def load_db():
         default_data = {
             "tests": [],
             "students": [],
-            "grievances": []
+            "grievances": [],
+            "payments": []
         }
         try:
             with open(DB_FILE, "w", encoding="utf-8") as f:
@@ -37,10 +38,13 @@ def load_db():
         return default_data
     try:
         with open(DB_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            if "payments" not in data:
+                data["payments"] = []
+            return data
     except Exception as e:
         print("DB read fallback:", e)
-        return {"tests": [], "students": [], "grievances": []}
+        return {"tests": [], "students": [], "grievances": [], "payments": []}
 
 def save_db(data):
     try:
@@ -52,6 +56,78 @@ def save_db(data):
 @app.get("/")
 def home():
     return {"status": "EXAMCBT backend is online and running successfully"}
+
+# ----------------- PAYMENT & UTR VERIFICATION APIS -----------------
+@app.get("/api/payments")
+def get_all_payments():
+    db = load_db()
+    return {"status": "success", "payments": db.get("payments", [])}
+
+@app.post("/api/payments/submit")
+def submit_payment_utr(payment: dict):
+    db = load_db()
+    payments = db.get("payments", [])
+    
+    # Check if UTR already submitted
+    utr = payment.get("utr", "").strip()
+    if not utr:
+        raise HTTPException(status_code=400, detail="UTR / Reference Number is required.")
+        
+    for p in payments:
+        if p.get("utr") == utr:
+            raise HTTPException(status_code=400, detail="This UTR / Reference number is already submitted.")
+
+    payment["status"] = "PENDING"
+    payments.insert(0, payment)
+    db["payments"] = payments
+    save_db(db)
+    return {"status": "success", "message": "Payment receipt registered. Verification pending with Directorate desk."}
+
+@app.post("/api/payments/approve")
+def approve_payment(data: dict):
+    db = load_db()
+    payment_id = data.get("id")
+    payments = db.get("payments", [])
+    students = db.get("students", [])
+
+    target_payment = None
+    for p in payments:
+        if p.get("id") == payment_id:
+            p["status"] = "APPROVED"
+            target_payment = p
+            break
+
+    if not target_payment:
+        raise HTTPException(status_code=404, detail="Payment request not found.")
+
+    # Automatically upgrade candidate tier in centralized student roster
+    student_id = target_payment.get("studentId")
+    tier_to_grant = target_payment.get("tier", "BASIC")
+
+    for s in students:
+        if s.get("id") == student_id or s.get("email") == target_payment.get("email"):
+            s["tier"] = tier_to_grant
+            break
+
+    db["payments"] = payments
+    db["students"] = students
+    save_db(db)
+    return {"status": "success", "message": f"Payment approved and tier upgraded to {tier_to_grant}."}
+
+@app.post("/api/payments/reject")
+def reject_payment(data: dict):
+    db = load_db()
+    payment_id = data.get("id")
+    payments = db.get("payments", [])
+
+    for p in payments:
+        if p.get("id") == payment_id:
+            p["status"] = "REJECTED"
+            db["payments"] = payments
+            save_db(db)
+            return {"status": "success", "message": "Payment marked as rejected."}
+
+    raise HTTPException(status_code=404, detail="Payment record not found.")
 
 # ----------------- GRIEVANCE & SUPPORT DESK APIS -----------------
 @app.get("/api/grievances")
