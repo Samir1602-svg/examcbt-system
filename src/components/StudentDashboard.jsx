@@ -25,6 +25,9 @@ export default function StudentDashboard({
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState('');
 
+  // Editing State for Custom Vault Test (Admin-Grade Question & Diagram Editor)
+  const [editingVaultTest, setEditingVaultTest] = useState(null);
+
   // Payment Checkout States
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [selectedPlanDetails, setSelectedPlanDetails] = useState(null);
@@ -285,6 +288,129 @@ export default function StudentDashboard({
       setParseError('Server connection error during parsing. Please retry.');
     } finally {
       setIsParsing(false);
+    }
+  };
+
+  // ================= VAULT QUESTION & DIAGRAM EDITING HANDLERS =================
+  const handleSelectVaultTestToEdit = (vaultTest) => {
+    setEditingVaultTest(JSON.parse(JSON.stringify(vaultTest)));
+  };
+
+  const handleVaultQuestionTextChange = (qIndex, value) => {
+    const updated = { ...editingVaultTest };
+    updated.questions[qIndex].question = value;
+    updated.questions[qIndex].question_en = value;
+    updated.questions[qIndex].question_hi = value;
+    setEditingVaultTest(updated);
+  };
+
+  const handleVaultOptionChange = (qIndex, optIndex, value) => {
+    const updated = { ...editingVaultTest };
+    if (!updated.questions[qIndex].options) updated.questions[qIndex].options = [];
+    updated.questions[qIndex].options[optIndex] = value;
+    if (updated.questions[qIndex].options_en) updated.questions[qIndex].options_en[optIndex] = value;
+    if (updated.questions[qIndex].options_hi) updated.questions[qIndex].options_hi[optIndex] = value;
+    setEditingVaultTest(updated);
+  };
+
+  const handleVaultCorrectIndexChange = (qIndex, correctIdx) => {
+    const updated = { ...editingVaultTest };
+    updated.questions[qIndex].correct_option_index = correctIdx;
+    setEditingVaultTest(updated);
+  };
+
+  const handleDeleteVaultQuestion = (qIndex) => {
+    const updated = { ...editingVaultTest };
+    updated.questions.splice(qIndex, 1);
+    setEditingVaultTest(updated);
+  };
+
+  const handleVaultQuestionImageUpdate = (qIndex, base64Data) => {
+    const updated = { ...editingVaultTest };
+    updated.questions[qIndex].image = base64Data;
+    setEditingVaultTest(updated);
+  };
+
+  const handleVaultQuestionImageFileChange = (qIndex, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      handleVaultQuestionImageUpdate(qIndex, reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleVaultQuestionImagePaste = (qIndex, e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1) {
+        e.preventDefault();
+        const blob = items[i].getAsFile();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          handleVaultQuestionImageUpdate(qIndex, reader.result);
+        };
+        reader.readAsDataURL(blob);
+        break;
+      }
+    }
+  };
+
+  const handleSetStandardVaultFigureOptions = (qIndex) => {
+    const updated = { ...editingVaultTest };
+    const stdEn = ["Option 1", "Option 2", "Option 3", "Option 4"];
+    const stdHi = ["विकल्प 1", "विकल्प 2", "विकल्प 3", "विकल्प 4"];
+    updated.questions[qIndex].options = [...stdEn];
+    updated.questions[qIndex].options_en = [...stdEn];
+    updated.questions[qIndex].options_hi = [...stdHi];
+    setEditingVaultTest(updated);
+  };
+
+  const handleVaultOptionImageFileChange = (qIndex, optIndex, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const mdImg = `![Option ${optIndex + 1}](${reader.result})`;
+      handleVaultOptionChange(qIndex, optIndex, mdImg);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleAddVaultQuestion = () => {
+    const updated = { ...editingVaultTest };
+    const newQ = {
+      id: updated.questions.length + 1,
+      question: "New Custom Question Statement",
+      question_en: "New Custom Question Statement",
+      question_hi: "नया प्रश्न विवरण",
+      options: ["Option 1", "Option 2", "Option 3", "Option 4"],
+      options_en: ["Option 1", "Option 2", "Option 3", "Option 4"],
+      options_hi: ["विकल्प 1", "विकल्प 2", "विकल्प 3", "विकल्प 4"],
+      correct_option_index: 0,
+      subject: "Custom Mock Series"
+    };
+    updated.questions.push(newQ);
+    setEditingVaultTest(updated);
+  };
+
+  const handleSaveVaultChanges = () => {
+    const updatedVault = customVaultTests.map(t => 
+      t.id === editingVaultTest.id ? editingVaultTest : t
+    );
+    setCustomVaultTests(updatedVault);
+    localStorage.setItem(`cbt_vault_${candidateState.id}`, JSON.stringify(updatedVault));
+    setEditingVaultTest(null);
+    alert(`Success: "${editingVaultTest.title}" has been updated with diagrams & options.`);
+  };
+
+  const handleDeleteVaultTest = (testId) => {
+    if (window.confirm("Are you sure you want to delete this custom test from your vault?")) {
+      const updatedVault = customVaultTests.filter(t => t.id !== testId);
+      setCustomVaultTests(updatedVault);
+      localStorage.setItem(`cbt_vault_${candidateState.id}`, JSON.stringify(updatedVault));
     }
   };
 
@@ -585,7 +711,7 @@ export default function StudentDashboard({
           {/* Custom Vault is available for Advanced Pro */}
           {isAdvancedPro && (
             <button
-              onClick={() => setActiveTab('custom_vault')}
+              onClick={() => { setActiveTab('custom_vault'); setEditingVaultTest(null); }}
               className={`text-xs font-bold pb-2 border-b-2 transition whitespace-nowrap ${
                 activeTab === 'custom_vault' ? 'border-amber-400 text-amber-400' : 'border-transparent text-slate-400 hover:text-white'
               }`}
@@ -718,76 +844,232 @@ export default function StudentDashboard({
           </div>
         )}
 
-        {/* TAB 2: Secure Custom Vault (Advanced Tier Only) */}
+        {/* TAB 2: Secure Custom Vault (Advanced Tier Only - With Full Diagram/Option Editor) */}
         {activeTab === 'custom_vault' && isAdvancedPro && (
           <div className="space-y-6">
-            <div className="bg-[#18160e] border border-amber-500/40 p-6 rounded-3xl space-y-4 shadow-2xl shadow-amber-950/20">
-              <div>
-                <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded">
-                  Advanced Custom Upload Engine
-                </span>
-                <h3 className="text-lg font-black text-white mt-2">Upload Custom Exam Set (PDF / JSON)</h3>
-                <p className="text-xs text-amber-200/70 mt-1">
-                  Upload your examination question papers. Our automated engine parses them into standard CBT format and stores them in your private vault.
-                </p>
-              </div>
+            {!editingVaultTest ? (
+              <>
+                <div className="bg-[#18160e] border border-amber-500/40 p-6 rounded-3xl space-y-4 shadow-2xl shadow-amber-950/20">
+                  <div>
+                    <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded">
+                      Advanced Custom Upload Engine
+                    </span>
+                    <h3 className="text-lg font-black text-white mt-2">Upload Custom Exam Set (PDF / JSON)</h3>
+                    <p className="text-xs text-amber-200/70 mt-1">
+                      Upload your examination question papers. Our automated engine parses them into standard CBT format and stores them in your private vault with full editing capabilities.
+                    </p>
+                  </div>
 
-              <form onSubmit={handleCustomFileUpload} className="space-y-4">
-                <div className="border-2 border-dashed border-amber-500/30 hover:border-amber-500/60 p-6 rounded-2xl text-center bg-[#12100a] transition">
-                  <input 
-                    type="file" 
-                    accept=".pdf,.json"
-                    onChange={(e) => setSelectedFile(e.target.files[0])}
-                    className="text-xs text-amber-200/80 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer"
-                  />
-                  {selectedFile && (
-                    <p className="text-xs text-emerald-400 mt-2 font-mono">Selected: {selectedFile.name}</p>
+                  <form onSubmit={handleCustomFileUpload} className="space-y-4">
+                    <div className="border-2 border-dashed border-amber-500/30 hover:border-amber-500/60 p-6 rounded-2xl text-center bg-[#12100a] transition">
+                      <input 
+                        type="file" 
+                        accept=".pdf,.json"
+                        onChange={(e) => setSelectedFile(e.target.files[0])}
+                        className="text-xs text-amber-200/80 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-500 file:text-slate-950 hover:file:bg-amber-400 cursor-pointer"
+                      />
+                      {selectedFile && (
+                        <p className="text-xs text-emerald-400 mt-2 font-mono">Selected: {selectedFile.name}</p>
+                      )}
+                    </div>
+
+                    {parseError && (
+                      <p className="text-xs text-rose-400 bg-rose-500/10 p-3 rounded-xl border border-rose-500/20">{parseError}</p>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={!selectedFile || isParsing}
+                      className="w-full bg-gradient-to-r from-amber-500 to-yellow-400 hover:opacity-90 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 transition"
+                    >
+                      {isParsing ? 'Processing & Structuring CBT Format...' : 'Upload & Parse into CBT Format 🚀'}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Vault Tests List */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-amber-300/80">Your Private Vault Repository ({customVaultTests.length})</h4>
+                  {customVaultTests.length === 0 ? (
+                    <div className="bg-[#18160e]/50 border border-amber-500/20 rounded-2xl p-8 text-center text-amber-200/60 text-xs">
+                      Aapke vault me abhi koi custom uploaded exam nahi hai. Upar PDF upload karke pehla test create karein.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {customVaultTests.map((vaultTest) => (
+                        <div key={vaultTest.id} className="bg-[#18160e] border border-amber-500/30 p-5 rounded-3xl flex flex-col justify-between space-y-4">
+                          <div>
+                            <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                              Private Vault Test
+                            </span>
+                            <h3 className="font-bold text-base text-white mt-2">{vaultTest.title}</h3>
+                            <p className="text-xs text-amber-200/70 mt-1">📝 {vaultTest.questions?.length || 0} Parsed Questions</p>
+                          </div>
+                          
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleSelectVaultTestToEdit(vaultTest)}
+                              className="flex-1 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-bold py-2 rounded-xl text-xs transition"
+                            >
+                              ✏️ Edit Questions & Diagrams
+                            </button>
+                            <button
+                              onClick={() => handleDeleteVaultTest(vaultTest.id)}
+                              className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-3 py-2 rounded-xl text-xs font-bold transition"
+                            >
+                              Delete
+                            </button>
+                          </div>
+
+                          <button
+                            onClick={() => onStartMock(vaultTest)}
+                            className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition shadow-md shadow-amber-500/10"
+                          >
+                            Launch Custom CBT Exam →
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
-
-                {parseError && (
-                  <p className="text-xs text-rose-400 bg-rose-500/10 p-3 rounded-xl border border-rose-500/20">{parseError}</p>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={!selectedFile || isParsing}
-                  className="w-full bg-gradient-to-r from-amber-500 to-yellow-400 hover:opacity-90 disabled:opacity-50 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 transition"
-                >
-                  {isParsing ? 'Processing & Structuring CBT Format...' : 'Upload & Parse into CBT Format 🚀'}
-                </button>
-              </form>
-            </div>
-
-            {/* Vault Tests List */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-amber-300/80">Your Private Vault Repository ({customVaultTests.length})</h4>
-              {customVaultTests.length === 0 ? (
-                <div className="bg-[#18160e]/50 border border-amber-500/20 rounded-2xl p-8 text-center text-amber-200/60 text-xs">
-                  Aapke vault me abhi koi custom uploaded exam nahi hai. Upar PDF upload karke pehla test create karein.
+              </>
+            ) : (
+              /* ================= VAULT QUESTION & DIAGRAM EDITOR (ADMIN-GRADE) ================= */
+              <div className="bg-[#18160e] border border-amber-500/40 rounded-3xl p-6 space-y-6 shadow-2xl">
+                <div className="flex justify-between items-center border-b border-amber-500/20 pb-4">
+                  <div>
+                    <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Custom Vault Test Editor</span>
+                    <h2 className="text-xl font-bold text-white mt-0.5">{editingVaultTest.title}</h2>
+                  </div>
+                  <div className="flex space-x-3">
+                    <button 
+                      onClick={() => setEditingVaultTest(null)} 
+                      className="px-3.5 py-2 border border-slate-700 hover:bg-slate-800 rounded-xl text-xs font-bold text-slate-300 transition"
+                    >
+                      Close Editor
+                    </button>
+                    <button 
+                      onClick={handleSaveVaultChanges} 
+                      className="px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 font-black rounded-xl text-xs shadow-lg shadow-amber-500/20 hover:opacity-95 transition"
+                    >
+                      💾 Save Vault Changes
+                    </button>
+                  </div>
                 </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {customVaultTests.map((vaultTest) => (
-                    <div key={vaultTest.id} className="bg-[#18160e] border border-amber-500/30 p-5 rounded-3xl flex flex-col justify-between space-y-4">
-                      <div>
-                        <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                          Private Vault Test
-                        </span>
-                        <h3 className="font-bold text-base text-white mt-2">{vaultTest.title}</h3>
-                        <p className="text-xs text-amber-200/70 mt-1">📝 {vaultTest.questions?.length || 0} Parsed Questions</p>
+
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-sm font-bold text-amber-200">Questions ({editingVaultTest.questions?.length || 0})</h3>
+                    <button 
+                      onClick={handleAddVaultQuestion} 
+                      className="bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs px-3 py-1.5 rounded-lg font-bold hover:bg-amber-500/20 transition"
+                    >
+                      + Add New Question
+                    </button>
+                  </div>
+
+                  {editingVaultTest.questions?.map((q, qIdx) => (
+                    <div
+                      key={qIdx}
+                      onPaste={(e) => handleVaultQuestionImagePaste(qIdx, e)}
+                      className="bg-[#12100a] border border-amber-500/20 p-4 rounded-2xl space-y-3 focus-within:border-amber-400/50 transition"
+                    >
+                      <div className="flex flex-wrap justify-between items-center gap-2">
+                        <span className="text-xs font-bold text-amber-400">Q.{qIdx + 1}</span>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSetStandardVaultFigureOptions(qIdx)}
+                            className="bg-slate-900 hover:bg-slate-800 text-teal-400 border border-teal-500/30 px-2.5 py-1 rounded-lg text-[10px] font-bold transition"
+                            title="Reset options to Option 1, Option 2, Option 3, Option 4"
+                          >
+                            ⚡ Set Figure Options (1-4)
+                          </button>
+                          <label className="bg-slate-900 hover:bg-slate-800 text-amber-400 border border-amber-500/30 px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition">
+                            🖼️ {q.image ? "Replace Diagram" : "Upload Diagram"}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handleVaultQuestionImageFileChange(qIdx, e)}
+                              className="hidden"
+                            />
+                          </label>
+                          {q.image && (
+                            <button
+                              type="button"
+                              onClick={() => handleVaultQuestionImageUpdate(qIdx, null)}
+                              className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2 py-1 rounded-lg text-[10px] font-bold transition"
+                            >
+                              🗑️ Remove Diagram
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => handleDeleteVaultQuestion(qIdx)} 
+                            className="text-rose-400 hover:text-rose-300 text-xs font-bold pl-2"
+                          >
+                            Remove Q
+                          </button>
+                        </div>
                       </div>
-                      <button
-                        onClick={() => onStartMock(vaultTest)}
-                        className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-2.5 rounded-xl text-xs uppercase tracking-wider transition shadow-md shadow-amber-500/10"
-                      >
-                        Launch Custom CBT Exam →
-                      </button>
+
+                      <textarea
+                        rows={3}
+                        value={q.question || q.question_hi || q.question_en}
+                        onChange={(e) => handleVaultQuestionTextChange(qIdx, e.target.value)}
+                        placeholder="Question statement (Tip: You can press Ctrl+V here to paste a snipped screenshot diagram directly)"
+                        className="w-full bg-[#18160e] border border-amber-500/20 rounded-xl p-2.5 text-xs text-slate-200 outline-none focus:border-amber-400"
+                      />
+
+                      {/* Question Diagram Preview & Paste Zone */}
+                      {q.image ? (
+                        <div className="bg-[#18160e] border border-amber-500/30 rounded-xl p-3 flex flex-col items-center space-y-2">
+                          <img src={q.image} alt={`Q.${qIdx + 1} Diagram`} className="max-h-48 object-contain rounded bg-white p-1" />
+                          <span className="text-[10px] text-amber-200/70">Tip: Click this card and press Ctrl+V to replace with a new snipped screenshot</span>
+                        </div>
+                      ) : (
+                        <div className="border border-dashed border-amber-500/20 rounded-xl p-2 text-center text-[10px] text-amber-200/60">
+                          💡 Snipping Tool Tip: Take a screenshot (<kbd className="bg-slate-900 px-1 py-0.5 rounded text-amber-300">Win + Shift + S</kbd>), click anywhere on this card, and press <kbd className="bg-slate-900 px-1 py-0.5 rounded text-amber-300">Ctrl + V</kbd> to attach diagram.
+                        </div>
+                      )}
+
+                      {/* Options Grid with Option-level Diagram Attach */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        {(q.options || q.options_hi || q.options_en || []).map((opt, optIdx) => (
+                          <div key={optIdx} className={`flex items-center space-x-2 p-2 rounded-xl border ${q.correct_option_index === optIdx ? 'border-amber-400/60 bg-amber-500/10' : 'border-amber-500/20 bg-[#18160e]'}`}>
+                            <input
+                              type="radio"
+                              name={`vault_correct_${qIdx}`}
+                              checked={q.correct_option_index === optIdx}
+                              onChange={() => handleVaultCorrectIndexChange(qIdx, optIdx)}
+                              className="accent-amber-400 cursor-pointer shrink-0"
+                            />
+                            <span className="text-amber-300/80 font-bold shrink-0">{String.fromCharCode(65 + optIdx)}:</span>
+                            <input
+                              type="text"
+                              value={opt}
+                              onChange={(e) => handleVaultOptionChange(qIdx, optIdx, e.target.value)}
+                              className="w-full bg-transparent outline-none text-slate-200 text-xs"
+                            />
+                            <label
+                              className="text-[10px] bg-slate-900 hover:bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded cursor-pointer shrink-0 border border-slate-700"
+                              title="Upload diagram image for this option"
+                            >
+                              🖼️
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => handleVaultOptionImageFileChange(qIdx, optIdx, e)}
+                                className="hidden"
+                              />
+                            </label>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         )}
 
