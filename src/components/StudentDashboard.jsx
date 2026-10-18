@@ -37,7 +37,9 @@ export default function StudentDashboard({
   const [subscriptionPricing, setSubscriptionPricing] = useState(() => {
     return JSON.parse(localStorage.getItem('cbt_subscription_pricing') || JSON.stringify({
       basicPrice: 50,
-      advancedPrice: 150
+      basicSemiAnnualPrice: 299,
+      advancedPrice: 150,
+      advancedAnnualPrice: 799
     }));
   });
 
@@ -88,7 +90,7 @@ export default function StudentDashboard({
           if (myPayments.length > 0) {
             const formatted = myPayments.map(m => ({
               invoiceId: m.utr ? `UTR-${m.utr.slice(-6)}` : m.id,
-              tier: m.tierName || (m.tier === 'ADVANCED' ? 'Advanced Pro Vault' : 'Standard Premium'),
+              tier: m.tierName || (m.tier === 'ADVANCED' ? 'Advance Plan (Pro Vault)' : 'Pro Plan (Standard Premium)'),
               purchaseDate: m.date || new Date().toLocaleDateString('en-IN'),
               expiryDate: m.expiryDate || "Pending Review",
               status: m.status === 'APPROVED' ? 'SUCCESS (ACTIVATED)' : m.status === 'REJECTED' ? 'REJECTED' : 'PENDING VERIFICATION',
@@ -107,7 +109,7 @@ export default function StudentDashboard({
     const localBilling = JSON.parse(localStorage.getItem(`cbt_billing_${candidate.id}`) || JSON.stringify([
       {
         invoiceId: "INV-2026-001",
-        tier: currentTier === 'ADVANCED' ? `Advanced Pro Vault (₹${subscriptionPricing.advancedPrice} / Month)` : currentTier === 'BASIC' ? `Standard Premium (₹${subscriptionPricing.basicPrice} / Month)` : "Free Starter Plan",
+        tier: currentTier === 'ADVANCED' ? `Advance Plan (₹${subscriptionPricing.advancedPrice} / Month)` : currentTier === 'BASIC' ? `Pro Plan (₹${subscriptionPricing.basicPrice} / Month)` : "Base Plan (Free Starter)",
         purchaseDate: "2026-10-11",
         expiryDate: candidate.subscriptionExpiry || "2026-11-11",
         status: currentTier === 'FREE' ? "Active (Complimentary)" : "SUCCESS",
@@ -211,7 +213,7 @@ export default function StudentDashboard({
     if (!selectedFile) return;
 
     if (!isAdvancedPro) {
-      alert("Custom upload vault is available exclusively for Advanced Pro Vault subscribers.");
+      alert("Custom upload vault is available exclusively for Advance Plan (Pro Vault) subscribers.");
       setActiveTab('subscription_plans');
       return;
     }
@@ -452,7 +454,7 @@ export default function StudentDashboard({
                   currentTier === 'BASIC' ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' :
                   'bg-slate-800 text-slate-300 border-slate-700'
                 }`}>
-                  {isAdvancedPro ? '★ Advanced Pro Vault Plan' : currentTier === 'BASIC' ? 'Standard Premium Plan' : 'Free Starter Plan'}
+                  {isAdvancedPro ? '★ Advance Plan (Pro Vault)' : currentTier === 'BASIC' ? 'Pro Plan (Standard Premium)' : 'Base Plan (Free Starter)'}
                 </span>
               </div>
               <h2 className="text-lg sm:text-2xl font-black text-white">{candidate.name}</h2>
@@ -536,7 +538,7 @@ export default function StudentDashboard({
             {currentTier === "FREE" && mockTests.length > 10 && (
               <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center gap-3">
                 <p className="text-xs text-amber-300">
-                  ⚠️ <strong>Starter Plan Active:</strong> You have access to 10 sample mock examinations. Upgrade via subscription plans to unlock full repository.
+                  ⚠️ <strong>Base Plan Active:</strong> Aapke paas 10 sample mock examinations ka access hai. Full repository unlock karne ke liye Pro ya Advance plan me upgrade karein.
                 </p>
                 <button
                   onClick={() => setActiveTab('subscription_plans')}
@@ -685,97 +687,262 @@ export default function StudentDashboard({
           </div>
         )}
 
-        {/* TAB 3: Upgrade Plans & Subscriptions (Direct UPI QR Modal Trigger) */}
+        {/* TAB 3: Upgrade Plans & Subscriptions (Exact Tier Alignment) */}
         {activeTab === 'subscription_plans' && (
           <div className="space-y-6">
             <div className="text-center max-w-2xl mx-auto space-y-2">
-              <h2 className="text-xl sm:text-2xl font-black text-white">Choose Your Examination Subscription</h2>
+              <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
+                Transparent Examination Subscriptions
+              </span>
+              <h2 className="text-xl sm:text-3xl font-black text-white mt-2">Choose the Plan Built for Your Ambition</h2>
               <p className={`text-xs ${isAdvancedPro ? 'text-amber-200/70' : 'text-slate-400'}`}>
-                Scale your preparation with genuine TCS iON exam simulation, complete mock test repositories, and advanced custom parsing tools.
+                Scale your preparation with genuine TCS iON exam simulation, complete mock test repositories, and advanced custom AI parsing tools.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-4 items-stretch">
               
-              {/* Tier 1: Free Starter */}
-              <div className={`border rounded-3xl p-6 flex flex-col justify-between space-y-6 ${
-                isAdvancedPro ? 'bg-[#18160e] border-amber-500/20' : 'bg-slate-900 border-slate-800'
-              }`}>
+              {/* ================= TIER 1: BASE PLAN (FREE STARTER) ================= */}
+              <div className={`border rounded-3xl p-6 flex flex-col justify-between space-y-6 transition ${
+                currentTier === 'FREE' ? 'ring-2 ring-emerald-500/40 bg-slate-900/90' : 'bg-slate-900/50'
+              } border-slate-800`}>
                 <div className="space-y-4">
                   <div>
-                    <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-800 px-2.5 py-1 rounded-full">
-                      STARTER ACCESS
+                    <span className="text-[10px] font-mono font-black uppercase text-slate-400 bg-slate-800 px-2.5 py-1 rounded-full">
+                      Starter Assessment
                     </span>
-                    <h3 className="text-lg font-black text-white mt-3">Free Practice Plan</h3>
-                    <p className="text-2xl font-black text-emerald-400 mt-1">₹0 <span className="text-xs font-normal text-slate-400">/ forever</span></p>
+                    <h3 className="text-lg font-black text-white mt-3">1. Base Plan (Free Starter)</h3>
+                    <p className="text-xs text-slate-400 mt-1 leading-snug">
+                      <strong>Target:</strong> Naye students jo simulation test dekhna chahte hain aur trust build kar rahe hain.
+                    </p>
+                    <div className="mt-3">
+                      <span className="text-3xl font-black text-emerald-400">₹0</span>
+                      <span className="text-xs text-slate-500 ml-1 font-semibold">/ Free Forever</span>
+                    </div>
                   </div>
-                  <ul className="space-y-2 text-xs text-slate-300">
-                    <li className="flex items-center gap-2">✓ Access to 10 sample mock examinations</li>
-                    <li className="flex items-center gap-2">✓ Real TCS iON simulation interface</li>
-                    <li className="flex items-center gap-2">✓ Instant result & performance check</li>
-                  </ul>
+
+                  <div className="border-t border-slate-800 pt-3 space-y-3">
+                    <div>
+                      <span className="text-[10px] font-mono uppercase font-bold text-slate-400 tracking-wider block mb-1.5">
+                        Access Limit
+                      </span>
+                      <ul className="text-xs text-slate-300 space-y-1">
+                        <li className="flex items-start gap-1.5">
+                          <span className="text-emerald-400 shrink-0">•</span>
+                          <span>Sirf 5 se 10 Full-Length Mocks (Fixed demo question bank)</span>
+                        </li>
+                      </ul>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-mono uppercase font-bold text-emerald-400 tracking-wider block mb-1.5">
+                        Included Features
+                      </span>
+                      <ul className="text-xs text-slate-300 space-y-1.5">
+                        <li className="flex items-start gap-2">
+                          <span className="text-emerald-400 font-bold">✓</span>
+                          <span>Real TCS iON interface experience</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-emerald-400 font-bold">✓</span>
+                          <span>Basic scorecard (Total Marks, Correct/Wrong, Accuracy %)</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-emerald-400 font-bold">✓</span>
+                          <span>Solution key (sirf correct option dikhega, detailed explanation nahi)</span>
+                        </li>
+                      </ul>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-mono uppercase font-bold text-rose-400 tracking-wider block mb-1.5">
+                        Restrictions
+                      </span>
+                      <ul className="text-xs text-slate-400 space-y-1">
+                        <li className="flex items-start gap-2">
+                          <span className="text-rose-400">✗</span>
+                          <span>No PDF upload / Custom Mock feature</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-rose-400">✗</span>
+                          <span>Limited repository access</span>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
                 </div>
+
                 <button 
                   disabled
-                  className="w-full bg-slate-800 text-slate-400 font-bold py-3 rounded-2xl text-xs cursor-default"
+                  className="w-full bg-slate-800 text-slate-400 font-bold py-3 rounded-2xl text-xs cursor-default uppercase tracking-wider"
                 >
-                  {currentTier === 'FREE' ? 'Current Active Plan' : 'Free Starter'}
+                  {currentTier === 'FREE' ? 'Current Active Plan' : 'Free Starter Tier'}
                 </button>
               </div>
 
-              {/* Tier 2: Standard Premium */}
-              <div className={`border rounded-3xl p-6 flex flex-col justify-between space-y-6 relative overflow-hidden ${
-                isAdvancedPro ? 'bg-[#18160e] border-amber-500/40 shadow-lg shadow-amber-950/10' : 'bg-slate-900 border-amber-500/50'
+              {/* ================= TIER 2: PRO PLAN (STANDARD PREMIUM) ================= */}
+              <div className={`border rounded-3xl p-6 flex flex-col justify-between space-y-6 relative overflow-hidden transition shadow-xl ${
+                currentTier === 'BASIC' ? 'ring-2 ring-amber-400 bg-slate-900 border-amber-500' : 'bg-slate-900/90 border-amber-500/40 hover:border-amber-400'
               }`}>
-                <div className="absolute top-0 right-0 bg-amber-500 text-slate-950 text-[9px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-wider">
-                  Most Popular
+                <div className="absolute top-0 right-0 bg-gradient-to-l from-amber-500 to-amber-600 text-slate-950 text-[9px] font-black px-3.5 py-1 rounded-bl-xl uppercase tracking-wider shadow">
+                  Most Popular for Serious Aspirants
                 </div>
+
                 <div className="space-y-4">
                   <div>
                     <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-full">
-                      STANDARD PREMIUM
+                      Standard Premium
                     </span>
-                    <h3 className="text-lg font-black text-white mt-3">Full Mock Repository</h3>
-                    <p className="text-2xl font-black text-amber-400 mt-1">₹{subscriptionPricing.basicPrice} <span className="text-xs font-normal text-slate-400">/ month</span></p>
+                    <h3 className="text-lg font-black text-white mt-3">2. Pro Plan (Standard Premium)</h3>
+                    <p className="text-xs text-slate-400 mt-1 leading-snug">
+                      <strong>Target:</strong> Dedicated aspirants (SSC CGL, CHSL, RRB) jo roz regular mock test practice karna chahte hain.
+                    </p>
+                    <div className="mt-3 flex items-baseline gap-2">
+                      <span className="text-3xl font-black text-amber-400">₹{subscriptionPricing.basicPrice}</span>
+                      <span className="text-xs text-slate-400 font-semibold">/ Month</span>
+                      <span className="text-[11px] text-amber-300 font-mono bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                        ₹{subscriptionPricing.basicSemiAnnualPrice || 299} / 6 Months
+                      </span>
+                    </div>
                   </div>
-                  <ul className="space-y-2 text-xs text-slate-300">
-                    <li className="flex items-center gap-2">✓ Full access to all scheduled examination sets</li>
-                    <li className="flex items-center gap-2">✓ Active 6-month question bank repository</li>
-                    <li className="flex items-center gap-2">✓ Detailed solutions and analytical scorecards</li>
-                  </ul>
+
+                  <div className="border-t border-slate-800 pt-3 space-y-3">
+                    <div>
+                      <span className="text-[10px] font-mono uppercase font-bold text-slate-400 tracking-wider block mb-1.5">
+                        Access Limit
+                      </span>
+                      <ul className="text-xs text-slate-300 space-y-1">
+                        <li className="flex items-start gap-1.5">
+                          <span className="text-amber-400 shrink-0">•</span>
+                          <span><strong>Unlimited Access</strong> to all Official Mock Tests (SSC, RRB, CPO etc.)</span>
+                        </li>
+                        <li className="flex items-start gap-1.5">
+                          <span className="text-amber-400 shrink-0">•</span>
+                          <span>Live mock tests aur previous year question (PYQ) shifts</span>
+                        </li>
+                      </ul>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-mono uppercase font-bold text-emerald-400 tracking-wider block mb-1.5">
+                        Included Features
+                      </span>
+                      <ul className="text-xs text-slate-300 space-y-1.5">
+                        <li className="flex items-start gap-2">
+                          <span className="text-emerald-400 font-bold">✓</span>
+                          <span>Real marking scheme (+2 / -0.5) aur exact timer countdown</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-emerald-400 font-bold">✓</span>
+                          <span>Detailed question-by-question analytics (Section-wise time spent & weak areas)</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-emerald-400 font-bold">✓</span>
+                          <span>Hindi aur English bilingual toggle har question ke liye</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-emerald-400 font-bold">✓</span>
+                          <span>Question diagrams zoom aur full resolution preview</span>
+                        </li>
+                      </ul>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-mono uppercase font-bold text-rose-400 tracking-wider block mb-1.5">
+                        Restrictions
+                      </span>
+                      <ul className="text-xs text-slate-400 space-y-1">
+                        <li className="flex items-start gap-2">
+                          <span className="text-rose-400">✗</span>
+                          <span>Custom PDF-to-CBT parser available nahi hoga (sirf portal ke published tests de sakte hain)</span>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
                 </div>
+
                 <button 
-                  onClick={() => handleInitiatePayment('BASIC', 'Standard Premium', subscriptionPricing.basicPrice)}
-                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/10 active:scale-95"
+                  onClick={() => handleInitiatePayment('BASIC', 'Pro Plan (Standard Premium)', subscriptionPricing.basicPrice)}
+                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/20 active:scale-95"
                 >
-                  {currentTier === 'BASIC' ? 'Active Plan (Renew)' : `Proceed to Pay (₹${subscriptionPricing.basicPrice}) →`}
+                  {currentTier === 'BASIC' ? 'Active Plan (Renew Monthly) →' : `Upgrade to Pro (₹${subscriptionPricing.basicPrice} / Month) →`}
                 </button>
               </div>
 
-              {/* Tier 3: Advanced Pro Vault */}
-              <div className={`border rounded-3xl p-6 flex flex-col justify-between space-y-6 ${
-                isAdvancedPro ? 'bg-[#18160e] border-amber-400 shadow-xl shadow-amber-950/20 ring-2 ring-amber-400/20' : 'bg-slate-900 border-purple-500/50'
+              {/* ================= TIER 3: ADVANCE PLAN (PRO VAULT & AI PARSER) ================= */}
+              <div className={`border rounded-3xl p-6 flex flex-col justify-between space-y-6 relative overflow-hidden transition shadow-2xl ${
+                currentTier === 'ADVANCED' ? 'ring-2 ring-yellow-400 bg-[#18160e] border-yellow-500' : 'bg-gradient-to-b from-[#18160e] to-slate-950 border-purple-500/50 hover:border-yellow-400'
               }`}>
+                <div className="absolute top-0 right-0 bg-gradient-to-l from-yellow-400 to-amber-500 text-slate-950 text-[9px] font-black px-3.5 py-1 rounded-bl-xl uppercase tracking-wider shadow">
+                  Ultimate AI Power Tier
+                </div>
+
                 <div className="space-y-4">
                   <div>
-                    <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-full">
-                      PRO VAULT & PARSER
+                    <span className="text-[10px] font-mono font-bold text-yellow-400 bg-yellow-500/10 border border-yellow-500/30 px-2.5 py-1 rounded-full">
+                      Pro Vault & AI Engine
                     </span>
-                    <h3 className="text-lg font-black text-white mt-3">Advanced Custom Engine</h3>
-                    <p className="text-2xl font-black text-amber-400 mt-1">₹{subscriptionPricing.advancedPrice} <span className="text-xs font-normal text-slate-400">/ month</span></p>
+                    <h3 className="text-lg font-black text-white mt-3">3. Advance Plan (Pro Vault & AI Parser)</h3>
+                    <p className="text-xs text-slate-400 mt-1 leading-snug">
+                      <strong>Target:</strong> Coaching institutes, serious self-study students, aur aspirants jo personal test series / PYQ PDFs ko live CBT format mein attempt karna chahte hain.
+                    </p>
+                    <div className="mt-3 flex items-baseline gap-2">
+                      <span className="text-3xl font-black text-yellow-400">₹{subscriptionPricing.advancedPrice}</span>
+                      <span className="text-xs text-slate-400 font-semibold">/ Month</span>
+                      <span className="text-[11px] text-yellow-300 font-mono bg-yellow-500/10 px-2 py-0.5 rounded border border-yellow-500/20">
+                        ₹{subscriptionPricing.advancedAnnualPrice || 799} / Year
+                      </span>
+                    </div>
                   </div>
-                  <ul className="space-y-2 text-xs text-slate-300">
-                    <li className="flex items-center gap-2">✓ All Standard Premium repository features</li>
-                    <li className="flex items-center gap-2">✓ Custom exam upload via PDF or JSON</li>
-                    <li className="flex items-center gap-2">✓ AI-powered automated CBT formatting</li>
-                    <li className="flex items-center gap-2">✓ Secure personal candidate vault storage</li>
-                  </ul>
+
+                  <div className="border-t border-slate-800 pt-3 space-y-3">
+                    <div>
+                      <span className="text-[10px] font-mono uppercase font-bold text-slate-400 tracking-wider block mb-1.5">
+                        Access Limit
+                      </span>
+                      <ul className="text-xs text-slate-300 space-y-1">
+                        <li className="flex items-start gap-1.5">
+                          <span className="text-yellow-400 shrink-0">•</span>
+                          <span><strong>Sabhi Pro features included</strong></span>
+                        </li>
+                        <li className="flex items-start gap-1.5">
+                          <span className="text-yellow-400 shrink-0">•</span>
+                          <span>Personal Secure Vault Storage</span>
+                        </li>
+                      </ul>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-mono uppercase font-bold text-yellow-400 tracking-wider block mb-1.5">
+                        Exclusive Power Features
+                      </span>
+                      <ul className="text-xs text-slate-200 space-y-2">
+                        <li className="flex items-start gap-2">
+                          <span className="text-yellow-400 font-black">★</span>
+                          <span><strong>AI PDF-to-CBT Converter:</strong> Apni kisi bhi official answer key ya mock test PDF ko upload karo, system automatic format karke private CBT mock bana dega.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-yellow-400 font-black">★</span>
+                          <span><strong>Diagram Extraction Engine:</strong> Reasoning aur Maths ke figures automatic crop hokar question ke sath attach ho jayenge.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-yellow-400 font-black">★</span>
+                          <span><strong>Custom Time & Question Pacing:</strong> Candidate apna manchaaha timer (30m, 60m, 120m) customize kar sakta hai.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-yellow-400 font-black">★</span>
+                          <span><strong>Priority Grievance & Doubt Support:</strong> 24 hours turnaround time.</span>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
                 </div>
+
                 <button 
-                  onClick={() => handleInitiatePayment('ADVANCED', 'Advanced Pro Vault', subscriptionPricing.advancedPrice)}
-                  className="w-full bg-gradient-to-r from-amber-500 to-yellow-400 hover:opacity-90 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/20 active:scale-95"
+                  onClick={() => handleInitiatePayment('ADVANCED', 'Advance Plan (Pro Vault & AI Parser)', subscriptionPricing.advancedPrice)}
+                  className="w-full bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-500 hover:opacity-95 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-yellow-500/20 active:scale-95"
                 >
-                  {currentTier === 'ADVANCED' ? 'Active Plan (Renew)' : `Proceed to Pay (₹${subscriptionPricing.advancedPrice}) →`}
+                  {currentTier === 'ADVANCED' ? 'Active Plan (Renew Pro Vault) →' : `Upgrade to Advance (₹${subscriptionPricing.advancedPrice} / Month) →`}
                 </button>
               </div>
 
