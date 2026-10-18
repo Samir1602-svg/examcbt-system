@@ -28,8 +28,8 @@ export default function AdminDashboard({ onPublishTest, onUpdateExistingTest, on
     return JSON.parse(localStorage.getItem('cbt_showcase_exams') || JSON.stringify([
       { code: "SSC-CGL", name: "Combined Graduate Level", pattern: "Tier-1 (100 Qs / 60 Min)", status: "Active Mock Matrix" },
       { code: "SSC-CHSL", name: "Combined Higher Secondary", pattern: "Tier-1 (100 Qs / 60 Min)", status: "Simulation Ready" },
-      { code: "RRB-NTPC", name: "Non-Technical Popular", pattern: "CBT-1 (100 Qs / 90 Min)", status: "TCS Engine Active" },
-      { code: "SSC-CPO", name: "Central Police Organization", pattern: "Paper-1 (200 Qs / 120 Min)", status: "Certified Setup" }
+      { code: "RRB-NTPC", name: "Non-Technical Popular", pattern: "CBT-1 (100 Qs / 60 Min)", status: "TCS Engine Active" },
+      { code: "SSC-CPO", name: "Central Police Organization", pattern: "Paper-1 (100 Qs / 60 Min)", status: "Certified Setup" }
     ]));
   });
   const [newShowcaseCode, setNewShowcaseCode] = useState('');
@@ -72,7 +72,7 @@ Crucial Formatting Rules:
     setTimeout(() => setCopiedPrompt(false), 3000);
   };
 
-  // Central Cloud Database Sync for Students Roster
+  // Pure Central Cloud Database Sync (Zero Local Merging)
   const fetchStudents = async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/api/students`);
@@ -81,58 +81,43 @@ Crucial Formatting Rules:
         if (data.status === 'success' && Array.isArray(data.students)) {
           setRegisteredStudents(data.students);
           localStorage.setItem('cbt_students', JSON.stringify(data.students));
-          return;
         }
       }
     } catch (e) {
-      console.warn("Could not fetch remote students from central cloud DB, using offline backup:", e);
+      console.warn("Could not fetch remote students from central cloud DB:", e);
     }
-
-    // Fallback to local storage if offline
-    const local = JSON.parse(localStorage.getItem('cbt_students') || '[]');
-    setRegisteredStudents(local);
   };
 
   const fetchGrievances = async () => {
-    let list = [];
     try {
       const res = await fetch(`${API_BASE_URL}/api/grievances`);
       if (res.ok) {
         const data = await res.json();
         if (data.status === 'success' && Array.isArray(data.grievances)) {
-          list = data.grievances;
+          setGrievances(data.grievances);
+          localStorage.setItem('cbt_user_feedbacks', JSON.stringify(data.grievances));
         }
       }
     } catch (e) {
-      console.warn("Could not fetch remote grievances:", e);
+      console.warn("Could not fetch remote grievances from central cloud DB:", e);
     }
-
-    const local = JSON.parse(localStorage.getItem('cbt_user_feedbacks') || '[]');
-    local.forEach(locItem => {
-      if (!list.some(g => g.id === locItem.id)) {
-        list.push(locItem);
-      }
-    });
-
-    setGrievances(list);
   };
 
   useEffect(() => {
     fetchStudents();
     fetchGrievances();
-  }, []);
+  }, [activeTab]);
 
   const handleResolveGrievance = async (gId) => {
     const updated = grievances.map(g => g.id === gId ? { ...g, status: 'RESOLVED' } : g);
     setGrievances(updated);
-    localStorage.setItem('cbt_user_feedbacks', JSON.stringify(updated));
-
     try {
       await fetch(`${API_BASE_URL}/api/grievances/resolve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: gId })
       });
+      fetchGrievances();
     } catch (e) {
       console.warn("Remote resolve status sync error:", e);
     }
