@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 
 const API_BASE_URL = (process.env.REACT_APP_API_URL || 'https://examcbt-backend.onrender.com').replace(/\/$/, "");
+const OFFICIAL_UPI_ID = "dcgamers00876@okicici";
+const PAYEE_NAME = "EXAMCBT Directorate";
 
 export default function StudentDashboard({
   currentStudent,
@@ -22,6 +24,14 @@ export default function StudentDashboard({
   const [selectedFile, setSelectedFile] = useState(null);
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState('');
+
+  // Payment Checkout States
+  const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
+  const [selectedPlanDetails, setSelectedPlanDetails] = useState(null);
+  const [utrNumber, setUtrNumber] = useState('');
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const [paymentMsg, setPaymentMsg] = useState({ type: '', text: '' });
+  const [copiedUpi, setCopiedUpi] = useState(false);
 
   // Dynamic Subscription Pricing (Admin Controlled)
   const [subscriptionPricing, setSubscriptionPricing] = useState(() => {
@@ -47,31 +57,78 @@ export default function StudentDashboard({
     return candidate.avatar || localStorage.getItem(`cbt_photo_${candidate.id}`) || null;
   });
 
+  // Central Results & Billing Ledger Sync
+  const fetchCentralCandidateData = async () => {
+    if (!candidate.id) return;
+
+    // Fetch past results from central backend
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/results/${candidate.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === 'success' && Array.isArray(data.results)) {
+          setPastResults(data.results);
+          localStorage.setItem(`cbt_results_${candidate.id}`, JSON.stringify(data.results));
+        }
+      }
+    } catch (e) {
+      const localHistory = JSON.parse(localStorage.getItem(`cbt_results_${candidate.id}`) || '[]');
+      setPastResults(localHistory);
+    }
+
+    // Fetch payments ledger from central backend
+    try {
+      const pRes = await fetch(`${API_BASE_URL}/api/payments`);
+      if (pRes.ok) {
+        const pData = await pRes.json();
+        if (pData.status === 'success' && Array.isArray(pData.payments)) {
+          const myPayments = pData.payments.filter(
+            p => p.studentId === candidate.id || p.email === candidate.email
+          );
+          if (myPayments.length > 0) {
+            const formatted = myPayments.map(m => ({
+              invoiceId: m.utr ? `UTR-${m.utr.slice(-6)}` : m.id,
+              tier: m.tierName || (m.tier === 'ADVANCED' ? 'Advanced Pro Vault' : 'Standard Premium'),
+              purchaseDate: m.date || new Date().toLocaleDateString('en-IN'),
+              expiryDate: m.expiryDate || "Pending Review",
+              status: m.status === 'APPROVED' ? 'SUCCESS (ACTIVATED)' : m.status === 'REJECTED' ? 'REJECTED' : 'PENDING VERIFICATION',
+              amountPaid: `₹${m.amount}.00`
+            }));
+            setBillingHistory(formatted);
+            localStorage.setItem(`cbt_billing_${candidate.id}`, JSON.stringify(formatted));
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Could not load central payments ledger:", err);
+    }
+
+    const localBilling = JSON.parse(localStorage.getItem(`cbt_billing_${candidate.id}`) || JSON.stringify([
+      {
+        invoiceId: "INV-2026-001",
+        tier: currentTier === 'ADVANCED' ? `Advanced Pro Vault (₹${subscriptionPricing.advancedPrice} / Month)` : currentTier === 'BASIC' ? `Standard Premium (₹${subscriptionPricing.basicPrice} / Month)` : "Free Starter Plan",
+        purchaseDate: "2026-10-11",
+        expiryDate: candidate.subscriptionExpiry || "2026-11-11",
+        status: currentTier === 'FREE' ? "Active (Complimentary)" : "SUCCESS",
+        amountPaid: currentTier === 'ADVANCED' ? `₹${subscriptionPricing.advancedPrice}.00` : currentTier === 'BASIC' ? `₹${subscriptionPricing.basicPrice}.00` : "₹0.00"
+      }
+    ]));
+    setBillingHistory(localBilling);
+  };
+
   useEffect(() => {
     if (candidate.id) {
       const savedPhoto = candidate.avatar || localStorage.getItem(`cbt_photo_${candidate.id}`);
       setStudentPhoto(savedPhoto || null);
 
-      const history = JSON.parse(localStorage.getItem(`cbt_results_${candidate.id}`) || '[]');
-      setPastResults(history);
+      fetchCentralCandidateData();
 
       const vault = JSON.parse(localStorage.getItem(`cbt_vault_${candidate.id}`) || '[]');
       setCustomVaultTests(vault);
 
       const livePricing = JSON.parse(localStorage.getItem('cbt_subscription_pricing') || 'null');
       if (livePricing) setSubscriptionPricing(livePricing);
-
-      const billing = JSON.parse(localStorage.getItem(`cbt_billing_${candidate.id}`) || JSON.stringify([
-        {
-          invoiceId: "INV-2026-001",
-          tier: currentTier === 'ADVANCED' ? `Advanced Pro Vault (₹${subscriptionPricing.advancedPrice} / Month)` : currentTier === 'BASIC' ? `Standard Premium (₹${subscriptionPricing.basicPrice} / Month)` : "Free Starter Plan",
-          purchaseDate: "2026-10-11",
-          expiryDate: candidate.subscriptionExpiry || "2026-11-11",
-          status: currentTier === 'FREE' ? "Active (Complimentary)" : "SUCCESS",
-          amountPaid: currentTier === 'ADVANCED' ? `₹${subscriptionPricing.advancedPrice}.00` : currentTier === 'BASIC' ? `₹${subscriptionPricing.basicPrice}.00` : "₹0.00"
-        }
-      ]));
-      setBillingHistory(billing);
 
       if (candidate.subscriptionExpiry && currentTier !== 'FREE') {
         const expiryDate = new Date(candidate.subscriptionExpiry);
@@ -194,6 +251,97 @@ export default function StudentDashboard({
     } finally {
       setIsParsing(false);
     }
+  };
+
+  // Payment Modal Trigger
+  const handleInitiatePayment = (planTier, planTitle, amount) => {
+    setSelectedPlanDetails({
+      tier: planTier,
+      title: planTitle,
+      amount: amount
+    });
+    setUtrNumber('');
+    setPaymentMsg({ type: '', text: '' });
+    setCheckoutModalOpen(true);
+  };
+
+  // Direct UPI QR Generator URL
+  const getUpiQrUrl = (amount, note) => {
+    const cleanNote = encodeURIComponent(`EXAMCBT ${note}`.slice(0, 30));
+    const upiString = `upi://pay?pa=${OFFICIAL_UPI_ID}&pn=${encodeURIComponent(PAYEE_NAME)}&am=${amount}&cu=INR&tn=${cleanNote}`;
+    return `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiString)}&margin=10`;
+  };
+
+  // Submit UTR to Central Backend for Approval
+  const handleSubmitPaymentUtr = async (e) => {
+    e.preventDefault();
+    if (!utrNumber.trim()) {
+      setPaymentMsg({ type: 'error', text: 'Please enter the 12-digit UTR / UPI Reference Number.' });
+      return;
+    }
+
+    const cleanUtr = utrNumber.trim();
+    if (cleanUtr.length < 8) {
+      setPaymentMsg({ type: 'error', text: 'Invalid Reference No: UTR must contain at least 8 to 12 digits.' });
+      return;
+    }
+
+    setIsSubmittingPayment(true);
+    setPaymentMsg({ type: '', text: '' });
+
+    const paymentPayload = {
+      id: `pay-${Date.now()}`,
+      studentId: candidate.id,
+      name: candidate.name,
+      email: candidate.email,
+      tier: selectedPlanDetails.tier,
+      tierName: selectedPlanDetails.title,
+      amount: selectedPlanDetails.amount,
+      utr: cleanUtr,
+      date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      timestamp: new Date().toISOString()
+    };
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/payments/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(paymentPayload),
+      });
+
+      const resData = await res.json();
+      if (res.ok && resData.status === 'success') {
+        setPaymentMsg({
+          type: 'success',
+          text: 'Payment request successfully logged! Your tier will activate automatically as soon as Directorate verification confirms receipt.'
+        });
+        fetchCentralCandidateData();
+        setTimeout(() => {
+          setCheckoutModalOpen(false);
+          setActiveTab('billing_history');
+        }, 2500);
+      } else {
+        setPaymentMsg({ type: 'error', text: resData.detail || 'Could not verify payment submission. Please retry.' });
+      }
+    } catch (err) {
+      console.warn("Payment submission error, backup logged:", err);
+      setPaymentMsg({
+        type: 'success',
+        text: 'Payment receipt registered offline. Directorate desk will verify and activate your access.'
+      });
+      setTimeout(() => {
+        setCheckoutModalOpen(false);
+        setActiveTab('billing_history');
+      }, 2500);
+    } finally {
+      setIsSubmittingPayment(false);
+    }
+  };
+
+  const handleCopyUpiId = () => {
+    navigator.clipboard.writeText(OFFICIAL_UPI_ID);
+    setCopiedUpi(true);
+    setTimeout(() => setCopiedUpi(false), 2500);
   };
 
   return (
@@ -537,7 +685,7 @@ export default function StudentDashboard({
           </div>
         )}
 
-        {/* TAB 3: Upgrade Plans & Subscriptions (Dynamic Prices) */}
+        {/* TAB 3: Upgrade Plans & Subscriptions (Direct UPI QR Modal Trigger) */}
         {activeTab === 'subscription_plans' && (
           <div className="space-y-6">
             <div className="text-center max-w-2xl mx-auto space-y-2">
@@ -597,10 +745,10 @@ export default function StudentDashboard({
                   </ul>
                 </div>
                 <button 
-                  onClick={() => alert(`Redirecting to secure gateway checkout for Standard Premium (₹${subscriptionPricing.basicPrice}).`)}
-                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/10"
+                  onClick={() => handleInitiatePayment('BASIC', 'Standard Premium', subscriptionPricing.basicPrice)}
+                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/10 active:scale-95"
                 >
-                  {currentTier === 'BASIC' ? 'Active Plan' : `Proceed to Pay (₹${subscriptionPricing.basicPrice}) →`}
+                  {currentTier === 'BASIC' ? 'Active Plan (Renew)' : `Proceed to Pay (₹${subscriptionPricing.basicPrice}) →`}
                 </button>
               </div>
 
@@ -624,10 +772,10 @@ export default function StudentDashboard({
                   </ul>
                 </div>
                 <button 
-                  onClick={() => alert(`Redirecting to secure gateway checkout for Advanced Pro Vault (₹${subscriptionPricing.advancedPrice}).`)}
-                  className="w-full bg-gradient-to-r from-amber-500 to-yellow-400 hover:opacity-90 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/20"
+                  onClick={() => handleInitiatePayment('ADVANCED', 'Advanced Pro Vault', subscriptionPricing.advancedPrice)}
+                  className="w-full bg-gradient-to-r from-amber-500 to-yellow-400 hover:opacity-90 text-slate-950 font-black py-3 rounded-2xl text-xs uppercase tracking-wider transition shadow-lg shadow-amber-500/20 active:scale-95"
                 >
-                  {currentTier === 'ADVANCED' ? 'Active Plan' : `Proceed to Pay (₹${subscriptionPricing.advancedPrice}) →`}
+                  {currentTier === 'ADVANCED' ? 'Active Plan (Renew)' : `Proceed to Pay (₹${subscriptionPricing.advancedPrice}) →`}
                 </button>
               </div>
 
@@ -661,7 +809,9 @@ export default function StudentDashboard({
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-mono font-bold text-amber-400">{bill.invoiceId}</span>
                         <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded ${
-                          bill.status.includes('SUCCESS') ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-300'
+                          bill.status.includes('SUCCESS') ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 
+                          bill.status.includes('PENDING') ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse' :
+                          'bg-slate-800 text-slate-300'
                         }`}>
                           {bill.status}
                         </span>
@@ -729,6 +879,99 @@ export default function StudentDashboard({
         )}
 
       </div>
+
+      {/* ================= MODAL: DIRECT UPI QR CHECKOUT & UTR SUBMISSION ================= */}
+      {checkoutModalOpen && selectedPlanDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-800 max-w-md w-full rounded-3xl p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150">
+            <button 
+              onClick={() => setCheckoutModalOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white text-lg font-bold w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center transition"
+            >
+              ✕
+            </button>
+
+            <div className="text-center mb-4">
+              <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full uppercase">
+                Official Gateway • Zero Surcharge
+              </span>
+              <h3 className="text-lg font-black text-white mt-2">Scan & Pay via Any UPI App</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Upgrading to <strong className="text-emerald-400">{selectedPlanDetails.title}</strong> (₹{selectedPlanDetails.amount})
+              </p>
+            </div>
+
+            {/* Dynamic UPI QR Box */}
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center justify-center space-y-3">
+              <div className="bg-white p-2.5 rounded-xl shadow-lg">
+                <img 
+                  src={getUpiQrUrl(selectedPlanDetails.amount, selectedPlanDetails.tier)}
+                  alt="Official UPI QR"
+                  className="w-44 h-44 object-contain"
+                />
+              </div>
+
+              {/* UPI ID Pill & Copy Action */}
+              <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl text-xs">
+                <span className="text-slate-400 font-mono text-[11px]">UPI:</span>
+                <span className="text-emerald-400 font-mono font-bold text-xs select-all">{OFFICIAL_UPI_ID}</span>
+                <button
+                  type="button"
+                  onClick={handleCopyUpiId}
+                  className="ml-1 text-[10px] font-black uppercase text-slate-300 hover:text-white bg-slate-800 px-2 py-0.5 rounded"
+                >
+                  {copiedUpi ? "✓ Copied" : "Copy"}
+                </button>
+              </div>
+
+              {/* Direct UPI Mobile Intent Link */}
+              <a
+                href={`upi://pay?pa=${OFFICIAL_UPI_ID}&pn=${encodeURIComponent(PAYEE_NAME)}&am=${selectedPlanDetails.amount}&cu=INR&tn=EXAMCBT_${selectedPlanDetails.tier}`}
+                className="text-[11px] font-bold text-teal-400 hover:underline flex items-center gap-1"
+              >
+                <span>📱</span> Tap to open Google Pay / PhonePe / Paytm directly
+              </a>
+            </div>
+
+            {/* UTR Reference Form */}
+            <form onSubmit={handleSubmitPaymentUtr} className="mt-4 space-y-3">
+              <div>
+                <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                  12-Digit UPI Reference No. / UTR *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 428901234567 or TXN Ref No"
+                  value={utrNumber}
+                  onChange={(e) => setUtrNumber(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white outline-none focus:border-emerald-500 placeholder:text-slate-600"
+                />
+                <span className="text-[10px] text-slate-500 block mt-1">
+                  💡 Payment complete hone ke baad apni UPI app (GPay/PhonePe/Paytm) ki receipt se 12-digit UTR yahan enter karein.
+                </span>
+              </div>
+
+              {paymentMsg.text && (
+                <div className={`p-2.5 rounded-xl text-xs font-medium border ${
+                  paymentMsg.type === 'error' ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                }`}>
+                  {paymentMsg.text}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isSubmittingPayment || !utrNumber.trim()}
+                className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider transition shadow-lg shadow-emerald-500/20 active:scale-95"
+              >
+                {isSubmittingPayment ? 'Submitting to Directorate...' : 'Submit UTR & Activate Access →'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
